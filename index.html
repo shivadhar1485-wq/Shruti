@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Swara Streamer Studio Pro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<style>
+    * { box-sizing: border-box; }
+    body { 
+        font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; 
+        display: flex; justify-content: center; align-items: flex-start;
+        min-height: 100vh; margin: 0; padding: 10px; background-color: #0f0f11; color: #e2e8f0; 
+    }
+    .container { 
+        background: #18181c; padding: 18px; border-radius: 12px; 
+        box-shadow: 0 10px 25px rgba(0,0,0,0.65); border: 1px solid #2e2e38; 
+        width: 100%; max-width: 550px; text-align: center;
+    }
+    h2 { margin-top: 5px; font-weight: 600; color: #f8fafc; }
+    .saptak-section { background: #22222a; margin: 10px 0; padding: 8px; border-radius: 8px; border: 1px solid #2e2e38; }
+    .saptak-label { color: #3b82f6; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-bottom: 5px; display: block; }
+    button { 
+        margin: 5px; padding: 12px 22px; font-size: 15px; font-weight: 700;
+        cursor: pointer; border-radius: 6px; border: none; background-color: #2563eb; 
+        color: white; transition: background 0.15s ease; touch-action: manipulation; 
+    }
+    button:hover:not(:disabled) { background-color: #1d4ed8; }
+    button.danger { background-color: #dc2626; }
+    button:disabled { background-color: #3f3f46; color: #71717a; cursor: not-allowed; }
+    label { display: inline-block; margin: 4px; font-size: 13px; color: #94a3b8; cursor: pointer; }
+    .stream-viewport { margin: 16px 0; background: #09090b; border: 2px solid #2e2e38; border-radius: 8px; height: 180px; overflow: hidden; position: relative; }
+    .stream-viewport::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: rgba(59, 130, 246, 0.4); z-index: 10; pointer-events: none; display: var(--crosshair-display, block); }
+    .stream-track { display: flex; position: absolute; left: 50%; top: 50%; margin-top: -20px; height: 40px; align-items: center; gap: 30px; transition: transform 0.25s cubic-bezier(0.25, 1, 0.5, 1); will-change: transform; }
+    .stream-track.static-grid { position: absolute; left: 0 !important; top: 0 !important; margin-top: 0 !important; width: 100%; height: 100%; display: flex; flex-wrap: wrap; justify-content: center; align-content: center; align-items: center; gap: 12px; padding: 10px; transform: none !important; transition: none !important; }
+    .swara-card { font-size: 20px; font-weight: 700; color: #3f3f46; min-width: 60px; text-align: center; position: relative; }
+    .static-grid .swara-card { transform: none !important; font-size: 24px; min-width: 45px; color: #52525b; }
+    .swara-card.active { color: #3b82f6; font-size: 34px; text-shadow: 0 0 12px rgba(59, 130, 246, 0.7); }
+    .static-grid .swara-card.active { color: #3b82f6; font-size: 30px; }
+    #responseOverlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(9, 9, 11, 0.85); display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 12px; align-items: center; z-index: 20; font-size: 20px; font-weight: 700; color: #f59e0b; opacity: 0; pointer-events: none; transition: opacity 0.15s ease; }
+    #responseOverlay.visible { opacity: 1; }
+    #responseOverlay.reveal-dim { background: rgba(9, 9, 11, 0.4); }
+    .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; background: #22222a; padding: 12px; border-radius: 8px; text-align: left; border: 1px solid #2e2e38; }
+    .controls-full { grid-column: 1 / span 2; }
+    .raga-selector-wrap { background: #1e3a8a; border: 1px solid #3b82f6; padding: 8px; border-radius: 6px; margin-bottom: 8px; }
+    select, input[type="range"] { background: #18181b; color: #f8fafc; border: 1px solid #3f3f46; padding: 6px; border-radius: 4px; outline: none; }
+</style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Swara Streamer Studio</h2>
+    <div class="raga-selector-wrap">
+        <label style="color:#fff; font-weight:700;">Select Practice Raga: 
+            <select id="ragaSelect" onchange="applyRagaPreset()" style="font-weight:bold; padding:4px 8px;">
+                <option value="chromatic">Free Jam (All Selected Notes)</option>
+                <option value="yaman">Raga Yaman</option>
+                <option value="bhairav">Raga Bhairav</option>
+                <option value="bhoopali">Raga Bhoopali</option>
+                <option value="kaafi">Raga Kafi</option>
+                <option value="khamaj">Raga Khamaj</option>
+                <option value="malhar">Raga Miyan ki Malhar</option>
+                <option value="asawari">Raga Asavari</option>
+            </select>
+        </label>
+    </div>
+
+    <!-- Pools -->
+    <div class="saptak-section">
+        <span class="saptak-label">Mandra Saptak (m. to N.)</span>
+        <div id="mandraPool">
+            <label><input type="checkbox" value="m."> m.</label>
+            <label><input type="checkbox" value="M."> M.</label>
+            <label><input type="checkbox" value="P."> P.</label>
+            <label><input type="checkbox" value="d."> d.</label>
+            <label><input type="checkbox" value="D."> D.</label>
+            <label><input type="checkbox" value="n."> n.</label>
+            <label><input type="checkbox" value="N."> N.</label>
+        </div>
+    </div>
+    <div class="saptak-section">
+        <span class="saptak-label">Madhya Saptak (S to N)</span>
+        <div id="madhyaPool">
+            <label><input type="checkbox" value="S" checked> S</label>
+            <label><input type="checkbox" value="r"> r</label>
+            <label><input type="checkbox" value="R" checked> R</label>
+            <label><input type="checkbox" value="g"> g</label>
+            <label><input type="checkbox" value="G" checked> G</label>
+            <label><input type="checkbox" value="m"> m</label>
+            <label><input type="checkbox" value="M"> M</label>
+            <label><input type="checkbox" value="P" checked> P</label>
+            <label><input type="checkbox" value="d"> d</label>
+            <label><input type="checkbox" value="D" checked> D</label>
+            <label><input type="checkbox" value="n"> n</label>
+            <label><input type="checkbox" value="N"> N</label>
+        </div>
+    </div>
+    <div class="saptak-section">
+        <span class="saptak-label">Taar Saptak (S' to P')</span>
+        <div id="taarPool">
+            <label><input type="checkbox" value="S'"> S'</label>
+            <label><input type="checkbox" value="r'"> r'</label>
+            <label><input type="checkbox" value="R'"> R'</label>
+            <label><input type="checkbox" value="g'"> g'</label>
+            <label><input type="checkbox" value="G'"> G'</label>
+            <label><input type="checkbox" value="m'"> m'</label>
+            <label><input type="checkbox" value="M'"> M'</label>
+            <label><input type="checkbox" value="P'"> P'</label>
+        </div>
+    </div>
+
+    <!-- Controls Panel -->
+    <div class="controls-grid">
+        <div class="controls-full">
+            <label>Tempo (BPM): <input type="range" id="bpmRange" min="40" max="150" value="75" oninput="updateBPM(this.value)"><span id="bpmDisplay">75</span></label>
+        </div>
+        <div><label><input type="checkbox" id="restrictLeaps" checked> Leap Restrict</label></div>
+        <div><label><input type="checkbox" id="blockRepeats"> Strict No Repeat</label></div>
+        <div><label style="opacity: 0.4; pointer-events: none;"><input type="checkbox" id="droneToggle" disabled> Drone Locked</label></div>
+        <div>
+            <label>Instrument: 
+                <select id="instrumentSelect">
+                    <option value="violin">Violin (MusyngKite)</option>
+                </select>
+            </label>
+        </div>
+        <div class="controls-full" style="border-top: 1px solid #3f3f46; padding-top: 6px; margin-top: 2px;">
+            <label>Mode: 
+                <select id="trainerMode" onchange="handleModeChange()">
+                    <option value="stream">Infinite Stream</option>
+                    <option value="callResponse">Call & Response Loop</option>
+                </select>
+            </label>
+            <span id="phraseLenSpan" style="display:none; margin-left:10px;">Len: 
+                <select id="phraseLength">
+                    <option value="3">3</option><option value="4" selected>4</option><option value="6">6</option><option value="8">8</option>
+                </select>
+            </span>
+        </div>
+    </div>
+
+    <div class="stream-viewport" id="streamViewport">
+        <div id="responseOverlay"><div id="modeStatusText">LISTEN</div><div id="responseCountdown" style="font-size: 14px; color:#a1a1aa; margin-top:3px;"></div></div>
+        <div class="stream-track" id="streamTrack" style="transform: translate(0px, 0px);"><div class="swara-card active">---</div></div>
+    </div>
+    <div><button id="startBtn" onclick="startStream()">Start Trainer</button><button id="stopBtn" onclick="stopStream()" class="danger" disabled>Stop</button></div>
+</div>
+
+<script>
+let isPlaying = false, timeoutId = null;
+let noteHistory = []; 
+let renderedCount = 0, currentPhraseCount = 0, phraseSwaraMemory = []; 
+let lastAudioPlayed = null; 
+
+let bpm = 75;
+const CHROMATIC_ORDER = [
+    'm.', 'M.', 'P.', 'd.', 'D.', 'n.', 'N.',
+    'S', 'r', 'R', 'g', 'G', 'm', 'M', 'P', 'd', 'D', 'n', 'N',
+    'S\'', 'r\'', 'R\'', 'g\'', 'G\'', 'm\'', 'M\'', 'P\''
+];
+
+// Map matching swaras to the exact filenames inside the server tree repository folder
+const SWARA_TO_FILE_NAME = {
+    'm.': 'F3', 'M.': 'Fs3', 'P.': 'G3', 'd.': 'Ab3', 'D.': 'A3', 'n.': 'Bb3', 'N.': 'B3',
+    'S': 'C4',  'r': 'Cs4', 'R': 'D4',  'g': 'Ds4', 'G': 'E4',  'm': 'F4',  'M': 'Fs4',  
+    'P': 'G4',  'd': 'Ab4', 'D': 'A4',  'n': 'Bb4', 'N': 'B4',
+    "S'": 'C5', "r'": 'Cs5', "R'": 'D5', "g'": 'Ds5', "G'": 'E5', "m'": 'F5', "M'": 'Fs5', "P'": 'G5'
+};
+
+// DIRECT EXTERNAL REFERENCE FETCH POINT: Bridges directly to Gleitz's hosted production mirror files!
+const SOUNDFONT_ROOT = "https://gleitz.github.io/midi-js-soundfonts/MusyngKite/violin-mp3/";
+
+const INSTRUMENT_SAMPLES = { harmonium: {} };
+Object.keys(SWARA_TO_FILE_NAME).forEach(swaraKey => {
+    let pitchFile = SWARA_TO_FILE_NAME[swaraKey]; 
+    INSTRUMENT_SAMPLES.harmonium[swaraKey] = `${SOUNDFONT_ROOT}${pitchFile}.mp3`;
+});
+
+const RAGA_DEFINITIONS = {
+    yaman:    { allowed: ['S','R','G','M','P','D','N'], vadi:'G', samvadi:'N' },
+    bhairav:  { allowed: ['S','r','G','m','P','d','N'], vadi:'d', samvadi:'r' },
+    bhoopali: { allowed: ['S','R','G','P','D'],         vadi:'G', samvadi:'D' },
+    kaafi:    { allowed: ['S','R','g','m','P','D','n'], vadi:'P', samvadi:'S' },
+    khamaj:   { allowed: ['S','R','G','m','P','D','N','n'], vadi:'G', samvadi:'N' },
+    malhar:   { allowed: ['S','R','g','m','P','D','n','N'], vadi:'S', samvadi:'P' },
+    asawari:  { allowed: ['S','R','m','P','d','g','n'], vadi:'d', samvadi:'g' }
+};
+
+let cachedAudioElements = {};
+function preCacheAudioFiles() {
+    let inst = "harmonium";
+    Object.keys(INSTRUMENT_SAMPLES[inst]).forEach(noteKey => {
+        let audioUrl = INSTRUMENT_SAMPLES[inst][noteKey];
+        let audio = new Audio();
+        audio.src = audioUrl;
+        audio.preload = "auto";
+        if(!cachedAudioElements[noteKey]) cachedAudioElements[noteKey] = [];
+        cachedAudioElements[noteKey].push(audio);
+        cachedAudioElements[noteKey].push(audio.cloneNode(true));
+        cachedAudioElements[noteKey].push(audio.cloneNode(true));
+    });
+}
+preCacheAudioFiles();
+
+function applyRagaPreset() {
+    const ragaKey = document.getElementById('ragaSelect').value;
+    if (ragaKey === 'chromatic') return;
+    const def = RAGA_DEFINITIONS[ragaKey];
+    document.querySelectorAll("#mandraPool input, #madhyaPool input, #taarPool input").forEach(cb => {
+        let baseSwara = cb.value.replace(/[.']/g, ''); cb.checked = def.allowed.includes(baseSwara);
+    });
+}
+function updateBPM(val) { bpm = parseInt(val); document.getElementById('bpmDisplay').innerText = val; }
+function handleModeChange() {
+    const isCR = document.getElementById('trainerMode').value === 'callResponse';
+    document.getElementById('phraseLenSpan').style.display = isCR ? 'inline' : 'none';
+    const track = document.getElementById('streamTrack');
+    if(isCR) {
+        track.classList.add('static-grid'); document.getElementById('streamViewport').style.setProperty('--crosshair-display', 'none');
+        track.innerHTML = '<div class="swara-card">Ready</div>';
+    } else {
+        track.classList.remove('static-grid'); document.getElementById('streamViewport').style.setProperty('--crosshair-display', 'block');
+        track.innerHTML = '<div class="swara-card active">---</div>';
+    }
+}
+function getSelectedPool() {
+    let pool = [];
+    document.querySelectorAll("#mandraPool input, #madhyaPool input, #taarPool input").forEach(cb => {
+        if(!cb.checked) return;
+        pool.push({ name: cb.value, chromaIndex: CHROMATIC_ORDER.indexOf(cb.value) });
+    });
+    return pool;
+}
+function startStream() {
+    let pool = getSelectedPool(); if (pool.length < 1) return alert("Please select your notes first!");
+    isPlaying = true; document.getElementById('startBtn').disabled = true; document.getElementById('stopBtn').disabled = false;
+    const mode = document.getElementById('trainerMode').value; const track = document.getElementById('streamTrack'); track.innerHTML = '';
+    noteHistory = []; renderedCount = 0; currentPhraseCount = 0; phraseSwaraMemory = [];
+    if (mode === 'callResponse') { track.classList.add('static-grid'); document.getElementById('streamViewport').style.setProperty('--crosshair-display', 'none'); setupPlaceholderGrid(); }
+    else { track.classList.remove('static-grid'); document.getElementById('streamViewport').style.setProperty('--crosshair-display', 'block'); track.style.transform = 'translate(-30px, 0px)'; }
+    tick();
+}
+function setupPlaceholderGrid() {
+    const track = document.getElementById('streamTrack'); track.innerHTML = '';
+    const maxPhraseLen = parseInt(document.getElementById('phraseLength').value);
+    for(let i=0; i < maxPhraseLen; i++) {
+        let placeholder = document.createElement('div'); placeholder.className = 'swara-card'; placeholder.innerText = '_'; track.appendChild(placeholder);
+    }
+}
+function stopStream() {
+    isPlaying = false; clearTimeout(timeoutId); if(lastAudioPlayed) { try { lastAudioPlayed.pause(); } catch(e){} }
+    document.getElementById('responseOverlay').classList.remove('visible', 'reveal-dim');
+    document.getElementById('startBtn').disabled = false; document.getElementById('stopBtn').disabled = true; handleModeChange(); 
+}
+function tick() {
+    if (!isPlaying) return; let pool = getSelectedPool(); if (pool.length === 0) { stopStream(); return; }
+    const mode = document.getElementById('trainerMode').value; const maxPhraseLen = parseInt(document.getElementById('phraseLength').value); let interval = (60 / bpm) * 1000;
+    if (mode === 'stream') {
+        let nextSwara = selectNextSpontaneousSwara(pool); noteHistory.push(nextSwara.name); if (noteHistory.length > 5) noteHistory.shift();
+        playClipFile(nextSwara.name); renderSwaraToTrack(nextSwara.name, nextSwara.chromaIndex); timeoutId = setTimeout(tick, interval);
+    } else {
+        if (currentPhraseCount < maxPhraseLen) {
+            document.getElementById('responseOverlay').classList.add('visible'); document.getElementById('modeStatusText').innerText = "LISTEN"; document.getElementById('modeStatusText').style.color = "#3b82f6";
+            document.getElementById('responseCountdown').innerText = `Playing note ${currentPhraseCount + 1} of ${maxPhraseLen}`;
+            let nextSwara = selectNextSpontaneousSwara(pool); noteHistory.push(nextSwara.name); if (noteHistory.length > 5) noteHistory.shift(); phraseSwaraMemory.push(nextSwara);
+            playClipFile(nextSwara.name);
+            const track = document.getElementById('streamTrack'); let targetCard = track.children[currentPhraseCount];
+            if (targetCard) { targetCard.innerText = "?"; targetCard.classList.add('active'); targetCard.dataset.secretName = nextSwara.name; if (currentPhraseCount > 0) track.children[currentPhraseCount - 1].classList.remove('active'); }
+            currentPhraseCount++; timeoutId = setTimeout(tick, interval);
+        } else {
+            const track = document.getElementById('streamTrack'); if (track.children[maxPhraseLen - 1]) track.children[maxPhraseLen - 1].classList.remove('active');
+            document.getElementById('modeStatusText').innerText = "SING / ECHO NOW"; document.getElementById('modeStatusText').style.color = "#f59e0b";
+            let echoTimeTotal = interval * maxPhraseLen; let timeSlice = echoTimeTotal / 4; let count = 4;
+            document.getElementById('responseCountdown').innerText = `⏱️ Echo window closing: ${count}`;
+            let countInterval = setInterval(() => { count--; if (count > 0) document.getElementById('responseCountdown').innerText = `⏱️ Echo window closing: ${count}`; }, timeSlice);
+            setTimeout(() => {
+                clearInterval(countInterval); revealPhraseCards(); document.getElementById('responseOverlay').classList.add('reveal-dim'); document.getElementById('modeStatusText').innerText = "PHRASE REPLAY"; document.getElementById('modeStatusText').style.color = "#10b981"; document.getElementById('responseCountdown').innerText = "Internalize and audit the melodic movement...";
+                replayPhraseSequence(0, interval, () => { setTimeout(() => { document.getElementById('responseOverlay').classList.remove('reveal-dim'); setupPlaceholderGrid(); currentPhraseCount = 0; phraseSwaraMemory = []; tick(); }, 2500); });
+            }, echoTimeTotal);
+        }
+    }
+}
+function replayPhraseSequence(idx, speedInterval, finishCallback) {
+    if (!isPlaying) return; if (idx >= phraseSwaraMemory.length) { const track = document.getElementById('streamTrack'); if (track.children[phraseSwaraMemory.length - 1]) track.children[phraseSwaraMemory.length - 1].classList.remove('active'); finishCallback(); return; }
+    const track = document.getElementById('streamTrack'); let currentCard = track.children[idx];
+    if (currentCard) { currentCard.classList.add('active'); if (idx > 0 && track.children[idx - 1]) track.children[idx - 1].classList.remove('active'); }
+    playClipFile(phraseSwaraMemory[idx].name); setTimeout(() => { replayPhraseSequence(idx + 1, speedInterval, finishCallback); }, speedInterval);
+}
+function selectNextSpontaneousSwara(pool) {
+    if (noteHistory.length === 0 || pool.length === 1) return pool[Math.floor(Math.random() * pool.length)];
+    let lastNoteName = noteHistory[noteHistory.length - 1]; let lastNoteBase = lastNoteName.replace(/[.']/g, ''); let filteredPool = pool;
+    if (document.getElementById('blockRepeats').checked) { filteredPool = filteredPool.filter(p => p.name !== lastNoteName); } 
+    else { if (noteHistory.length >= 2 && noteHistory[noteHistory.length - 1] === lastNoteName && noteHistory[noteHistory.length - 2] === lastNoteName) filteredPool = filteredPool.filter(p => p.name !== lastNoteName); }
+    if (document.getElementById('restrictLeaps').checked) { let lastSwaraObj = pool.find(p => p.name === lastNoteName); if (lastSwaraObj) { let closeNotes = filteredPool.filter(p => Math.abs(p.chromaIndex - lastSwaraObj.chromaIndex) <= 5); if (closeNotes.length > 0) filteredPool = closeNotes; } }
+    const ragaKey = document.getElementById('ragaSelect').value;
+    if (ragaKey !== 'chromatic' && RAGA_DEFINITIONS[ragaKey]) {
+        const raga = RAGA_DEFINITIONS[ragaKey]; let weights = new Array(filteredPool.length).fill(10);
+        filteredPool.forEach((swara, idx) => {
+            let baseName = swara.name.replace(/[.']/g, ''); if (baseName === raga.vadi) weights[idx] += 20; if (baseName === raga.samvadi) weights[idx] += 12;
+            if (ragaKey === 'yaman') { if (lastNoteBase === 'N' && baseName === 'R') weights[idx] += 25; if (lastNoteBase === 'N' && baseName === 'S') weights[idx] -= 9; if (lastNoteBase === 'M' && baseName === 'G') weights[idx] += 15; if (lastNoteBase === 'P' && baseName === 'M') weights[idx] += 15; }
+            else if (ragaKey === 'bhairav') { if (lastNoteBase === 'P' && baseName === 'm') weights[idx] += 20; if (lastNoteBase === 'm' && baseName === 'r') weights[idx] += 25; if (lastNoteBase === 'S' && baseName === 'N') weights[idx] += 15; }
+            else if (ragaKey === 'bhoopali') { if (lastNoteBase === 'S' && baseName === 'R') weights[idx] += 15; if (lastNoteBase === 'R' && baseName === 'G') weights[idx] += 20; if (lastNoteBase === 'P' && baseName === 'G') weights[idx] += 20; }
+            else if (ragaKey === 'kaafi') { if (lastNoteBase === 'R' && baseName === 'g') weights[idx] += 20; if (lastNoteBase === 'g' && baseName === 'm') weights[idx] += 20; if (lastNoteBase === 'P' && baseName === 'm') weights[idx] += 15; }
+            else if (ragaKey === 'khamaj') { let isAscending = swara.chromaIndex > CHROMATIC_ORDER.indexOf(lastNoteName); if (isAscending && swara.name.toLowerCase().includes('n')) { if (swara.name.includes("'")) weights[idx] = 1; } if (lastNoteBase === 'D' && baseName === 'n') weights[idx] += 25; if (lastNoteBase === 'n' && baseName === 'D') weights[idx] += 20; }
+            else if (ragaKey === 'malhar') { if (lastNoteBase === 'R' && baseName === 'g') weights[idx] += 30; if (lastNoteBase === 'g' && baseName === 'm') weights[idx] += 25; if (lastNoteBase === 'P' && baseName === 'n') weights[idx] += 20; }
+            else if (ragaKey === 'asawari') { let isAscending = swara.chromaIndex > CHROMATIC_ORDER.indexOf(lastNoteName); if (isAscending && (baseName === 'g' || baseName === 'n')) weights[idx] = 1; if (lastNoteBase === 'd' && baseName === 'P') weights[idx] += 25; if (lastNoteBase === 'm' && baseName === 'g') weights[idx] += 20; }
+        });
+        let totalWeight = weights.reduce((a, b) => a + b, 0); let roll = Math.random() * totalWeight, sum = 0;
+        for (let i = 0; i < filteredPool.length; i++) { sum += weights[i]; if (roll <= sum) return filteredPool[i]; }
+    }
+    if (filteredPool.length === 0) filteredPool = pool; return filteredPool[Math.floor(Math.random() * filteredPool.length)];
+}
+function playClipFile(noteKey) {
+    try {
+        let channelPool = cachedAudioElements[noteKey]; if (!channelPool || channelPool.length === 0) return;
+        let availableChannel = channelPool.shift(); channelPool.push(availableChannel);
+        availableChannel.currentTime = 0; availableChannel.volume = 1.0;
+        let playPromise = availableChannel.play(); if (playPromise !== undefined) { playPromise.catch(error => { console.log("Playback interaction catch:", error); }); }
+        lastAudioPlayed = availableChannel;
+    } catch(e) { console.error("Playback error:", e); }
+}
+function renderSwaraToTrack(name, chromaIndex) {
+    const track = document.getElementById('streamTrack'); const currentActive = track.querySelector('.swara-card.active'); if (currentActive) currentActive.classList.remove('active');
+    const newCard = document.createElement('div'); newCard.className = 'swara-card active'; newCard.innerText = name;
+    let verticalShift = (chromaIndex - 7) * -11; newCard.style.transform = `translateY(${verticalShift}px)`; track.appendChild(newCard);
+    const stepSize = 60 + 30; let targetX = -(renderedCount * stepSize) - 30; let targetY = -verticalShift; track.style.transform = `translate(${targetX}px, ${targetY}px)`; renderedCount++;
+    if (track.children.length > 100) {
+        for (let i = 0; i < 50; i++) { track.removeChild(track.firstChild); }
+        renderedCount -= 50; let correctedX = -(renderedCount * stepSize) - 30; track.style.transition = 'none'; track.style.transform = `translate(${correctedX}px, ${targetY}px)`; track.offsetHeight; track.style.transition = 'transform 0.25s cubic-bezier(0.25, 1, 0.5, 1)';
+    }
+}
+document.addEventListener("DOMContentLoaded", () => { applyRagaPreset(); });
+function revealPhraseCards() {
+    const track = document.getElementById('streamTrack'); const cards = track.querySelectorAll('.swara-card');
+    cards.forEach(card => { if (card.dataset.secretName) { card.innerText = card.dataset.secretName; card.style.color = "#10b981"; card.style.fontWeight = "900"; delete card.dataset.secretName; } });
+}
+</script>
+</body>
+</html>
