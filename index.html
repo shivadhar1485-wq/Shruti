@@ -247,6 +247,7 @@ select{
     padding:10px;
 }
 
+/* Miniscule Number Selector Style */
 .miniscule-num {
     width:70px;
     background:#111217;
@@ -326,6 +327,7 @@ select{
     z-index:10;
 }
 
+/* Dynamic vs Static handling adjustments */
 .stream-track{
     position:absolute;
 
@@ -342,6 +344,7 @@ select{
     gap:18px;
 }
 
+/* Static fallback view behavior rules applied via js */
 .stream-track.static-grid {
     left:50% !important;
     transform:translate(-50%, -50%) !important;
@@ -376,6 +379,7 @@ select{
     text-shadow:0 0 14px rgba(59,130,246,.7);
 }
 
+/* Auto scales text when working with 8 or 10 notes in static frame views */
 .stream-track.static-grid .swara {
     min-width:auto;
     font-size:clamp(14px, 3.5vw, 22px);
@@ -736,9 +740,10 @@ button.stop{
 
 <script>
 let audioCtx = null, isPlaying = false, timeoutId = null;
-let droneNodes = []; 
+let continuousOsc = null, continuousGain = null, droneNodes = []; 
 let noteHistory = []; 
 let renderedCount = 0, currentPhraseCount = 0, phraseSwaraMemory = []; 
+let meendNoteCounter = 0; 
 
 let bpm = 75;
 const SA_FREQ = 246.94; 
@@ -760,48 +765,14 @@ const RAGA_DEFINITIONS = {
     'Raga Asavari':  { allowed: ['S','R','m','P','d','g','n'], vadi:'d', samvadi:'g' }
 };
 
-const SAMPLE_BASE_DIR = "./"; 
-const SAMPLE_MAP = {
-    "m.":  { file: "E3.mp3",  freq: 164.81 },
-    "M.":  { file: "F3.mp3",  freq: 174.61 },
-    "P.":  { file: "Gb3.mp3", freq: 185.00 },
-    "d.":  { file: "G3.mp3",  freq: 196.00 },
-    "D.":  { file: "A3.mp3",  freq: 220.00 },
-    "n.":  { file: "Bb3.mp3", freq: 233.08 },
-    "N.":  { file: "B3.mp3",  freq: 246.94 },
-    "S":   { file: "B3.mp3",  freq: 246.94 }, 
-    "r":   { file: "C4.mp3",  freq: 261.63 },
-    "R":   { file: "Db4.mp3", freq: 277.18 },
-    "g":   { file: "D4.mp3",  freq: 293.66 },
-    "G":   { file: "Eb4.mp3", freq: 311.13 },
-    "m":   { file: "E4.mp3",  freq: 329.63 },
-    "M":   { file: "F4.mp3",  freq: 349.23 },
-    "P":   { file: "Gb4.mp3", freq: 369.99 },
-    "d":   { file: "G4.mp3",  freq: 392.00 },
-    "D":   { file: "Ab4.mp3", freq: 415.30 },
-    "n":   { file: "A4.mp3",  freq: 440.00 },
-    "N":   { file: "Bb4.mp3", freq: 466.16 },
-    "S'":  { file: "B4.mp3",  freq: 493.88 },
-    "r'":  { file: "C5.mp3",  freq: 523.25 },
-    "R'":  { file: "Db5.mp3", freq: 554.37 },
-    "g'":  { file: "D5.mp3",  freq: 587.33 },
-    "G'":  { file: "Eb5.mp3", freq: 622.25 },
-    "m'":  { file: "E5.mp3",  freq: 659.25 },
-    "M'":  { file: "F5.mp3",  freq: 698.46 },
-    "P'":  { file: "Gb5.mp3", freq: 739.99 }
-};
-
-let audioBuffers = {}; // Dynamic cache container
-let currentActiveNode = null;
-let currentActiveGainNode = null;
-let currentActiveSwaraName = null;
-
 // DOM Elements
 const ragaSelect = document.querySelector('.raga-wrap select');
 const noteCheckboxes = document.querySelectorAll('.note-grid input[type="checkbox"]');
+
 const tempoSlider = document.querySelector('.controls input[type="range"]');
 const tempoNumberInput = document.querySelector('.miniscule-num');
 const bpmValDisplay = document.getElementById('bpmValDisplay');
+
 const modeSelect = document.getElementById('modeSelectField');
 const phraseLengthSelect = document.getElementById('phraseLengthField');
 
@@ -820,13 +791,17 @@ const stopBtn = document.querySelectorAll('.button-row button')[1];
 
 function initApp() {
     stopBtn.disabled = true;
+
     ragaSelect.addEventListener('change', applyRagaPreset);
+    
+    // Linked Slider + Numeric Selector inputs
     tempoSlider.addEventListener('input', (e) => syncTempoInputs(e.target.value, 'slider'));
     tempoNumberInput.addEventListener('input', (e) => syncTempoInputs(e.target.value, 'number'));
+    
     modeSelect.addEventListener('change', handleModeChange);
     phraseLengthSelect.addEventListener('change', handleModeChange);
     droneCb.addEventListener('change', toggleTanpuraDrone);
-    startBtn.addEventListener('click', handleStartClick);
+    startBtn.addEventListener('click', startStream);
     stopBtn.addEventListener('click', stopStream);
 
     applyRagaPreset();
@@ -838,8 +813,10 @@ function syncTempoInputs(val, source) {
     if (isNaN(num)) return;
     if (num < 40) num = 40;
     if (num > 150) num = 150;
+    
     bpm = num;
     bpmValDisplay.innerText = num;
+
     if (source === 'slider') tempoNumberInput.value = num;
     if (source === 'number') tempoSlider.value = num;
 }
@@ -849,6 +826,7 @@ function applyRagaPreset() {
     if (ragaKey === 'Free Jam') return;
     const def = RAGA_DEFINITIONS[ragaKey];
     if (!def) return;
+
     noteCheckboxes.forEach(cb => {
         let rawVal = cb.parentElement.textContent.trim();
         let baseSwara = rawVal.replace(/[.']/g, ''); 
@@ -859,69 +837,18 @@ function applyRagaPreset() {
 function handleModeChange() {
     const isCR = modeSelect.value === 'Call & Response';
     phraseLengthSelect.style.display = isCR ? 'block' : 'none';
+    
     overlayElement.classList.remove('show');
     streamTrack.style.transition = 'none';
     
     if(isCR) {
         streamTrack.classList.add('static-grid');
-        streamTrack.style.transform = 'translate(-50%, -50%)';
         setupPlaceholderGrid();
     } else {
         streamTrack.classList.remove('static-grid');
         streamTrack.style.left = '50%';
         streamTrack.style.transform = 'translate(-30px, -50%)'; 
         streamTrack.innerHTML = '<div class="swara active">---</div>';
-    }
-}
-
-function initAudio() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-}
-
-function handleStartClick() {
-    initAudio(); 
-    isPlaying = true;
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    
-    const mode = modeSelect.value;
-    streamTrack.innerHTML = '';
-    noteHistory = []; renderedCount = 0; currentPhraseCount = 0; phraseSwaraMemory = [];
-
-    if (mode === 'Call & Response') {
-        streamTrack.classList.add('static-grid');
-        setupPlaceholderGrid();
-    } else {
-        streamTrack.classList.remove('static-grid');
-        streamTrack.style.transition = 'transform 0.2s cubic-bezier(0.25, 1, 0.5, 1)';
-        streamTrack.style.left = '50%';
-        streamTrack.style.transform = 'translate(-30px, -50%)'; 
-    }
-
-    toggleTanpuraDrone();
-    tick();
-}
-
-// ASYNCHRONOUS ON-DEMAND LAZY LOAD ENGINE WITH BUILT-IN NETWORK RACING TIMEOUT
-async function fetchSingleBufferWithTimeout(swaraName) {
-    if (audioBuffers[swaraName]) return audioBuffers[swaraName]; // Cache Hit
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 250); // 250ms Network Limit Before Synth Takes Over
-
-    try {
-        const fileUrl = `${SAMPLE_BASE_DIR}${SAMPLE_MAP[swaraName].file}`;
-        const res = await fetch(fileUrl, { signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (!res.ok) throw new Error();
-        const arrayBuf = await res.arrayBuffer();
-        const decodedBuffer = await audioCtx.decodeAudioData(arrayBuf);
-        audioBuffers[swaraName] = decodedBuffer; // Save to memory cache
-        return decodedBuffer;
-    } catch (e) {
-        clearTimeout(timeoutId);
-        return null; // Return null cleanly to fire synth backup instantly without blocking loops
     }
 }
 
@@ -939,6 +866,11 @@ function getSelectedPool() {
         });
     });
     return pool;
+}
+
+function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
 function toggleTanpuraDrone() {
@@ -969,6 +901,34 @@ function killDrone() {
     droneNodes = [];
 }
 
+function startStream() {
+    let pool = getSelectedPool();
+    if (pool.length < 1) return alert("Please select your note configurations first!");
+
+    initAudio();
+    isPlaying = true;
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    
+    const mode = modeSelect.value;
+    streamTrack.innerHTML = '';
+    
+    noteHistory = []; renderedCount = 0; currentPhraseCount = 0; phraseSwaraMemory = []; meendNoteCounter = 0;
+
+    if (mode === 'Call & Response') {
+        streamTrack.classList.add('static-grid');
+        setupPlaceholderGrid();
+    } else {
+        streamTrack.classList.remove('static-grid');
+        streamTrack.style.transition = 'transform 0.2s cubic-bezier(0.25, 1, 0.5, 1)';
+        streamTrack.style.left = '50%';
+        streamTrack.style.transform = 'translate(-30px, -50%)'; 
+    }
+
+    toggleTanpuraDrone();
+    tick();
+}
+
 function setupPlaceholderGrid() {
     streamTrack.innerHTML = '';
     const maxPhraseLen = parseInt(phraseLengthSelect.value); 
@@ -983,7 +943,10 @@ function setupPlaceholderGrid() {
 function stopStream() {
     isPlaying = false; 
     clearTimeout(timeoutId);
-    fadeOutActiveSample();
+    if (continuousOsc) { 
+        try { continuousOsc.stop(); } catch(e){} 
+        continuousOsc = null; continuousGain = null; 
+    }
     killDrone();
     overlayElement.classList.remove('show');
     startBtn.disabled = false;
@@ -991,7 +954,7 @@ function stopStream() {
     handleModeChange(); 
 }
 
-async function tick() {
+function tick() {
     if (!isPlaying) return;
     let pool = getSelectedPool();
     if (pool.length === 0) { stopStream(); return; }
@@ -1004,8 +967,7 @@ async function tick() {
         let nextSwara = selectNextSpontaneousSwara(pool);
         noteHistory.push(nextSwara.name);
         if (noteHistory.length > 5) noteHistory.shift();
-        
-        await playVoiceSample(nextSwara.name, nextSwara.freq);
+        playVoice(nextSwara.freq);
         renderSwaraToTrack(nextSwara.name, nextSwara.chromaIndex);
         timeoutId = setTimeout(tick, interval);
     } else {
@@ -1020,14 +982,17 @@ async function tick() {
             if (noteHistory.length > 5) noteHistory.shift();
             phraseSwaraMemory.push(nextSwara);
 
-            await playVoiceSample(nextSwara.name, nextSwara.freq);
+            playVoice(nextSwara.freq);
             
             let targetCard = streamTrack.children[currentPhraseCount];
             if (targetCard) {
                 targetCard.innerText = "?";
                 targetCard.classList.add('active');
                 targetCard.dataset.secretName = nextSwara.name;
+                
+                // Keep layout structure static: items stay perfectly in line horizontally
                 targetCard.style.transform = 'none';
+
                 if (currentPhraseCount > 0) streamTrack.children[currentPhraseCount - 1].classList.remove('active');
             }
             currentPhraseCount++;
@@ -1037,7 +1002,8 @@ async function tick() {
 
             overlayTitle.innerText = "SING / ECHO NOW";
             overlayTitle.style.color = "#f59e0b";
-            fadeOutActiveSample();
+            
+            if (continuousGain) continuousGain.gain.setValueAtTime(0, audioCtx.currentTime);
 
             let echoTimeTotal = interval * maxPhraseLen;
             let timeSlice = echoTimeTotal / 4;
@@ -1068,7 +1034,7 @@ async function tick() {
     }
 }
 
-async function replayPhraseSequence(idx, speedInterval, finishCallback) {
+function replayPhraseSequence(idx, speedInterval, finishCallback) {
     if (!isPlaying) return;
     if (idx >= phraseSwaraMemory.length) {
         if (streamTrack.children[phraseSwaraMemory.length - 1]) streamTrack.children[phraseSwaraMemory.length - 1].classList.remove('active');
@@ -1079,7 +1045,7 @@ async function replayPhraseSequence(idx, speedInterval, finishCallback) {
         currentCard.classList.add('active');
         if (idx > 0 && streamTrack.children[idx - 1]) streamTrack.children[idx - 1].classList.remove('active');
     }
-    await playVoiceSample(phraseSwaraMemory[idx].name, phraseSwaraMemory[idx].freq);
+    playVoice(phraseSwaraMemory[idx].freq);
     setTimeout(() => { replayPhraseSequence(idx + 1, speedInterval, finishCallback); }, speedInterval);
 }
 
@@ -1087,6 +1053,7 @@ function selectNextSpontaneousSwara(pool) {
     if (noteHistory.length === 0 || pool.length === 1) {
         return pool[Math.floor(Math.random() * pool.length)];
     }
+
     let lastNoteName = noteHistory[noteHistory.length - 1];
     let lastNoteBase = lastNoteName.replace(/[.']/g, '');
     let filteredPool = pool;
@@ -1114,6 +1081,7 @@ function selectNextSpontaneousSwara(pool) {
 
         filteredPool.forEach((swara, idx) => {
             let baseName = swara.name.replace(/[.']/g, '');
+
             if (baseName === raga.vadi) weights[idx] += 20;
             if (baseName === raga.samvadi) weights[idx] += 12;
 
@@ -1122,30 +1090,36 @@ function selectNextSpontaneousSwara(pool) {
                 if (lastNoteBase === 'N' && baseName === 'S') weights[idx] -= 9;  
                 if (lastNoteBase === 'M' && baseName === 'G') weights[idx] += 15; 
                 if (lastNoteBase === 'P' && baseName === 'M') weights[idx] += 15; 
-            } else if (ragaKey === 'Raga Bhairav') {
+            }
+            else if (ragaKey === 'Raga Bhairav') {
                 if (lastNoteBase === 'P' && baseName === 'm') weights[idx] += 20; 
                 if (lastNoteBase === 'm' && baseName === 'r') weights[idx] += 25; 
                 if (lastNoteBase === 'S' && baseName === 'N') weights[idx] += 15; 
-            } else if (ragaKey === 'Raga Bhoopali') {
+            }
+            else if (ragaKey === 'Raga Bhoopali') {
                 if (lastNoteBase === 'S' && baseName === 'R') weights[idx] += 15; 
                 if (lastNoteBase === 'R' && baseName === 'G') weights[idx] += 20;
                 if (lastNoteBase === 'P' && baseName === 'G') weights[idx] += 20; 
-            } else if (ragaKey === 'Raga Kafi') {
+            }
+            else if (ragaKey === 'Raga Kafi') {
                 if (lastNoteBase === 'R' && baseName === 'g') weights[idx] += 20; 
                 if (lastNoteBase === 'g' && baseName === 'm') weights[idx] += 20;
                 if (lastNoteBase === 'P' && baseName === 'm') weights[idx] += 15; 
-            } else if (ragaKey === 'Raga Khamaj') {
+            }
+            else if (ragaKey === 'Raga Khamaj') {
                 let isAscending = swara.chromaIndex > CHROMATIC_ORDER.indexOf(lastNoteName);
                 if (isAscending && swara.name.toLowerCase().includes('n')) {
                     if (swara.name.includes("'")) weights[idx] = 1; 
                 }
                 if (lastNoteBase === 'D' && baseName === 'n') weights[idx] += 25; 
                 if (lastNoteBase === 'n' && baseName === 'D') weights[idx] += 20;
-            } else if (ragaKey === 'Raga Miyan ki Malhar') {
+            }
+            else if (ragaKey === 'Raga Miyan ki Malhar') {
                 if (lastNoteBase === 'R' && baseName === 'g') weights[idx] += 30; 
                 if (lastNoteBase === 'g' && baseName === 'm') weights[idx] += 25;
                 if (lastNoteBase === 'P' && baseName === 'n') weights[idx] += 20; 
-            } else if (ragaKey === 'Raga Asavari') {
+            }
+            else if (ragaKey === 'Raga Asavari') {
                 let isAscending = swara.chromaIndex > CHROMATIC_ORDER.indexOf(lastNoteName);
                 if (isAscending && (baseName === 'g' || baseName === 'n')) weights[idx] = 1; 
                 if (lastNoteBase === 'd' && baseName === 'P') weights[idx] += 25; 
@@ -1160,94 +1134,57 @@ function selectNextSpontaneousSwara(pool) {
             if (roll <= sum) return filteredPool[i];
         }
     }
+
     if (filteredPool.length === 0) filteredPool = pool;
     return filteredPool[Math.floor(Math.random() * filteredPool.length)];
 }
 
-// BULLETPROOF ENGINE: Dynamic async fetch + automated seamless synth fallback execution
-async function playVoiceSample(targetSwaraName, targetFreq) {
+function playVoice(freq) {
     initAudio();
     let time = audioCtx.currentTime;
     let useMeend = meendCb.checked;
-    let noteDurationSec = 60 / bpm;
-    let crossfadeOverlapTail = 0.20; 
+    let noteDuration = (60 / bpm) * 1000;
 
-    // MEEND GLIDE: Slide active pitch rate instead of interrupting execution
-    if (useMeend && currentActiveNode && currentActiveSwaraName) {
-        let originSampleConfig = SAMPLE_MAP[currentActiveSwaraName];
-        if (originSampleConfig) {
-            let targetPlaybackRate = targetFreq / originSampleConfig.freq;
-            currentActiveNode.playbackRate.setValueAtTime(currentActiveNode.playbackRate.value, time);
-            currentActiveNode.playbackRate.exponentialRampToValueAtTime(targetPlaybackRate, time + 0.12);
-            currentActiveSwaraName = targetSwaraName;
-            return;
+    if (useMeend && meendNoteCounter > 12) {
+        if (continuousOsc) {
+            try { continuousOsc.stop(time); } catch(e){}
+            continuousOsc = null; continuousGain = null;
+        }
+        meendNoteCounter = 0;
+    }
+
+    if (!useMeend) {
+        if (continuousOsc) {
+            try { continuousOsc.stop(time); } catch(e){}
+            continuousOsc = null; continuousGain = null;
+        }
+        const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+        osc.type = 'sine'; 
+        osc.frequency.setValueAtTime(freq, time);
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.25, time + 0.02);
+        gain.gain.setValueAtTime(0.25, time + (noteDuration / 1000) - 0.03);
+        gain.gain.linearRampToValueAtTime(0, time + (noteDuration / 1000));
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(time); osc.stop(time + (noteDuration / 1000));
+    } else {
+        meendNoteCounter++;
+        if (!continuousOsc) {
+            continuousOsc = audioCtx.createOscillator(); 
+            continuousGain = audioCtx.createGain();
+            continuousOsc.type = 'sine'; 
+            continuousOsc.frequency.setValueAtTime(freq, time);
+            continuousGain.gain.setValueAtTime(0, time);
+            continuousGain.gain.linearRampToValueAtTime(0.25, time + 0.04);
+            continuousOsc.connect(continuousGain); 
+            continuousGain.connect(audioCtx.destination);
+            continuousOsc.start(time);
+        } else {
+            continuousGain.gain.linearRampToValueAtTime(0.25, time + 0.01);
+            continuousOsc.frequency.setValueAtTime(continuousOsc.frequency.value, time);
+            continuousOsc.frequency.exponentialRampToValueAtTime(freq, time + 0.07);
         }
     }
-
-    fadeOutActiveSample();
-
-    // Pull item from local storage, or trigger immediate on-demand lazy network request
-    let loadedBuffer = await fetchSingleBufferWithTimeout(targetSwaraName);
-
-    // EMERGENCY ROUTE: Instantly fires clean digital tone generator if network drops or lags
-    if (!loadedBuffer) {
-        let sampleOsc = audioCtx.createOscillator();
-        let sampleGain = audioCtx.createGain();
-        sampleOsc.type = 'sine';
-        sampleOsc.frequency.setValueAtTime(targetFreq, time);
-        sampleGain.gain.setValueAtTime(0, time);
-        sampleGain.gain.linearRampToValueAtTime(0.25, time + 0.02);
-        sampleGain.gain.setValueAtTime(0.25, time + noteDurationSec - 0.02);
-        sampleGain.gain.linearRampToValueAtTime(0, time + noteDurationSec);
-        sampleOsc.connect(sampleGain); sampleGain.connect(audioCtx.destination);
-        sampleOsc.start(time); sampleOsc.stop(time + noteDurationSec);
-        
-        currentActiveNode = sampleOsc;
-        currentActiveGainNode = sampleGain;
-        currentActiveSwaraName = targetSwaraName;
-        return;
-    }
-
-    let bufferSource = audioCtx.createBufferSource();
-    let gainNode = audioCtx.createGain();
-    bufferSource.buffer = loadedBuffer;
-    
-    let sampleReferenceBaseHz = SAMPLE_MAP[targetSwaraName] ? SAMPLE_MAP[targetSwaraName].freq : SA_FREQ;
-    let computedPlaybackRate = targetFreq / sampleReferenceBaseHz;
-    bufferSource.playbackRate.setValueAtTime(computedPlaybackRate, time);
-
-    gainNode.gain.setValueAtTime(0, time);
-    gainNode.gain.linearRampToValueAtTime(0.40, time + 0.03); 
-    gainNode.gain.setValueAtTime(0.40, time + noteDurationSec);
-    gainNode.gain.linearRampToValueAtTime(0.001, time + noteDurationSec + crossfadeOverlapTail);
-
-    bufferSource.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    
-    bufferSource.start(time);
-    bufferSource.stop(time + noteDurationSec + crossfadeOverlapTail);
-
-    currentActiveNode = bufferSource;
-    currentActiveGainNode = gainNode;
-    currentActiveSwaraName = targetSwaraName;
-}
-
-function fadeOutActiveSample() {
-    let time = audioCtx ? audioCtx.currentTime : 0;
-    if (currentActiveGainNode) {
-        let decayingGain = currentActiveGainNode;
-        let decayingNode = currentActiveNode;
-        try {
-            decayingGain.gain.setValueAtTime(decayingGain.gain.value, time);
-            decayingGain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
-            setTimeout(() => {
-                try { decayingNode.stop(); decayingNode.disconnect(); decayingGain.disconnect(); } catch(e){}
-            }, 200);
-        } catch(e){}
-    }
-    currentActiveNode = null;
-    currentActiveGainNode = null;
-    currentActiveSwaraName = null;
 }
 
 function renderSwaraToTrack(name, chromaIndex) {
@@ -1261,6 +1198,7 @@ function renderSwaraToTrack(name, chromaIndex) {
     let middleChromaIndex = CHROMATIC_ORDER.indexOf('S');
     let verticalShift = (chromaIndex - middleChromaIndex) * -12; 
     newCard.style.transform = `translateY(${verticalShift}px)`;
+    
     streamTrack.appendChild(newCard);
 
     const stepSize = (window.innerWidth < 420) ? (40 + 12) : ((window.innerWidth >= 768) ? (60 + 28) : (52 + 18)); 
