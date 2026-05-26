@@ -247,7 +247,6 @@ select{
     padding:10px;
 }
 
-/* Miniscule Number Selector Style */
 .miniscule-num {
     width:70px;
     background:#111217;
@@ -327,7 +326,6 @@ select{
     z-index:10;
 }
 
-/* Dynamic vs Static handling adjustments */
 .stream-track{
     position:absolute;
 
@@ -344,7 +342,6 @@ select{
     gap:18px;
 }
 
-/* Static fallback view behavior rules applied via js */
 .stream-track.static-grid {
     left:50% !important;
     transform:translate(-50%, -50%) !important;
@@ -379,7 +376,6 @@ select{
     text-shadow:0 0 14px rgba(59,130,246,.7);
 }
 
-/* Auto scales text when working with 8 or 10 notes in static frame views */
 .stream-track.static-grid .swara {
     min-width:auto;
     font-size:clamp(14px, 3.5vw, 22px);
@@ -739,14 +735,14 @@ button.stop{
 </div>
 
 <script>
+// --- CORE INSTANCE STATE ---
 let audioCtx = null, isPlaying = false, timeoutId = null;
-let continuousOsc = null, continuousGain = null, droneNodes = []; 
+let droneNodes = []; 
 let noteHistory = []; 
 let renderedCount = 0, currentPhraseCount = 0, phraseSwaraMemory = []; 
-let meendNoteCounter = 0; 
 
 let bpm = 75;
-const SA_FREQ = 246.94; 
+const SA_FREQ = 246.94; // B3 Standard Baseline Pitch Anchor Configuration
 const RATIOS = { S:1, r:16/15, R:9/8, g:6/5, G:5/4, m:4/3, M:45/32, P:3/2, d:8/5, D:5/3, n:9/5, N:15/8 };
 
 const CHROMATIC_ORDER = [
@@ -764,6 +760,43 @@ const RAGA_DEFINITIONS = {
     'Raga Miyan ki Malhar':   { allowed: ['S','R','g','m','P','D','n','N'], vadi:'S', samvadi:'P' },
     'Raga Asavari':  { allowed: ['S','R','m','P','d','g','n'], vadi:'d', samvadi:'g' }
 };
+
+// --- ACOUSTIC FILE SAMPLE ASSIGNMENTS ---
+const SAMPLE_BASE_DIR = "./"; // Dynamic directory target reference matching your folder workspace layout
+const SAMPLE_MAP = {
+    "m.":  { file: "E3.mp3",  freq: 164.81 },
+    "M.":  { file: "F3.mp3",  freq: 174.61 },
+    "P.":  { file: "Gb3.mp3", freq: 185.00 },
+    "d.":  { file: "G3.mp3",  freq: 196.00 },
+    "D.":  { file: "A3.mp3",  freq: 220.00 },
+    "n.":  { file: "Bb3.mp3", freq: 233.08 },
+    "N.":  { file: "B3.mp3",  freq: 246.94 },
+    "S":   { file: "B3.mp3",  freq: 246.94 }, // S baseline matches B3 anchor configuration 
+    "r":   { file: "C4.mp3",  freq: 261.63 },
+    "R":   { file: "Db4.mp3", freq: 277.18 },
+    "g":   { file: "D4.mp3",  freq: 293.66 },
+    "G":   { file: "Eb4.mp3", freq: 311.13 },
+    "m":   { file: "E4.mp3",  freq: 329.63 },
+    "M":   { file: "F4.mp3",  freq: 349.23 },
+    "P":   { file: "F#4.mp3", freq: 369.99 },
+    "d":   { file: "G4.mp3",  freq: 392.00 },
+    "D":   { file: "Ab4.mp3", freq: 415.30 },
+    "n":   { file: "A4.mp3",  freq: 440.00 },
+    "N":   { file: "Bb4.mp3", freq: 466.16 },
+    "S'":  { file: "B4.mp3",  freq: 493.88 },
+    "r'":  { file: "C5.mp3",  freq: 523.25 },
+    "R'":  { file: "Db5.mp3", freq: 554.37 },
+    "g'":  { file: "D5.mp3",  freq: 587.33 },
+    "G'":  { file: "Eb5.mp3", freq: 622.25 },
+    "m'":  { file: "E5.mp3",  freq: 659.25 },
+    "M'":  { file: "F5.mp3",  freq: 698.46 },
+    "P'":  { file: "Gb5.mp3", freq: 739.99 }
+};
+
+let audioBuffers = {};
+let currentActiveNode = null;
+let currentActiveGainNode = null;
+let currentActiveSwaraName = null;
 
 // DOM Elements
 const ragaSelect = document.querySelector('.raga-wrap select');
@@ -794,7 +827,6 @@ function initApp() {
 
     ragaSelect.addEventListener('change', applyRagaPreset);
     
-    // Linked Slider + Numeric Selector inputs
     tempoSlider.addEventListener('input', (e) => syncTempoInputs(e.target.value, 'slider'));
     tempoNumberInput.addEventListener('input', (e) => syncTempoInputs(e.target.value, 'number'));
     
@@ -806,6 +838,24 @@ function initApp() {
 
     applyRagaPreset();
     handleModeChange();
+    preloadAudioAssets();
+}
+
+async function preloadAudioAssets() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    console.log("Initializing Acoustic Note Profiles Archive Fetch...");
+    
+    for (let key in SAMPLE_MAP) {
+        try {
+            const fileUrl = `${SAMPLE_BASE_DIR}${SAMPLE_MAP[key].file}`;
+            const res = await fetch(fileUrl);
+            const arrayBuf = await res.arrayBuffer();
+            audioBuffers[key] = await audioCtx.decodeAudioData(arrayBuf);
+        } catch (e) {
+            console.warn(`Sample tracking missing or failed to decode array: ${SAMPLE_MAP[key].file}. Falling back dynamically to synth options.`);
+        }
+    }
+    console.log("Asset profiles preloaded successfully.");
 }
 
 function syncTempoInputs(val, source) {
@@ -843,6 +893,7 @@ function handleModeChange() {
     
     if(isCR) {
         streamTrack.classList.add('static-grid');
+        streamTrack.style.transform = 'translate(-50%, -50%)';
         setupPlaceholderGrid();
     } else {
         streamTrack.classList.remove('static-grid');
@@ -913,7 +964,7 @@ function startStream() {
     const mode = modeSelect.value;
     streamTrack.innerHTML = '';
     
-    noteHistory = []; renderedCount = 0; currentPhraseCount = 0; phraseSwaraMemory = []; meendNoteCounter = 0;
+    noteHistory = []; renderedCount = 0; currentPhraseCount = 0; phraseSwaraMemory = [];
 
     if (mode === 'Call & Response') {
         streamTrack.classList.add('static-grid');
@@ -943,10 +994,7 @@ function setupPlaceholderGrid() {
 function stopStream() {
     isPlaying = false; 
     clearTimeout(timeoutId);
-    if (continuousOsc) { 
-        try { continuousOsc.stop(); } catch(e){} 
-        continuousOsc = null; continuousGain = null; 
-    }
+    fadeOutActiveSample();
     killDrone();
     overlayElement.classList.remove('show');
     startBtn.disabled = false;
@@ -967,7 +1015,7 @@ function tick() {
         let nextSwara = selectNextSpontaneousSwara(pool);
         noteHistory.push(nextSwara.name);
         if (noteHistory.length > 5) noteHistory.shift();
-        playVoice(nextSwara.freq);
+        playVoiceSample(nextSwara.name, nextSwara.freq);
         renderSwaraToTrack(nextSwara.name, nextSwara.chromaIndex);
         timeoutId = setTimeout(tick, interval);
     } else {
@@ -982,15 +1030,13 @@ function tick() {
             if (noteHistory.length > 5) noteHistory.shift();
             phraseSwaraMemory.push(nextSwara);
 
-            playVoice(nextSwara.freq);
+            playVoiceSample(nextSwara.name, nextSwara.freq);
             
             let targetCard = streamTrack.children[currentPhraseCount];
             if (targetCard) {
                 targetCard.innerText = "?";
                 targetCard.classList.add('active');
                 targetCard.dataset.secretName = nextSwara.name;
-                
-                // Keep layout structure static: items stay perfectly in line horizontally
                 targetCard.style.transform = 'none';
 
                 if (currentPhraseCount > 0) streamTrack.children[currentPhraseCount - 1].classList.remove('active');
@@ -1003,7 +1049,7 @@ function tick() {
             overlayTitle.innerText = "SING / ECHO NOW";
             overlayTitle.style.color = "#f59e0b";
             
-            if (continuousGain) continuousGain.gain.setValueAtTime(0, audioCtx.currentTime);
+            fadeOutActiveSample();
 
             let echoTimeTotal = interval * maxPhraseLen;
             let timeSlice = echoTimeTotal / 4;
@@ -1045,7 +1091,7 @@ function replayPhraseSequence(idx, speedInterval, finishCallback) {
         currentCard.classList.add('active');
         if (idx > 0 && streamTrack.children[idx - 1]) streamTrack.children[idx - 1].classList.remove('active');
     }
-    playVoice(phraseSwaraMemory[idx].freq);
+    playVoiceSample(phraseSwaraMemory[idx].name, phraseSwaraMemory[idx].freq);
     setTimeout(() => { replayPhraseSequence(idx + 1, speedInterval, finishCallback); }, speedInterval);
 }
 
@@ -1139,52 +1185,98 @@ function selectNextSpontaneousSwara(pool) {
     return filteredPool[Math.floor(Math.random() * filteredPool.length)];
 }
 
-function playVoice(freq) {
+// --- EQUALIZED CROSSFADING COMPILER SAMPLES CONTROLLER ---
+function playVoiceSample(targetSwaraName, targetFreq) {
     initAudio();
     let time = audioCtx.currentTime;
     let useMeend = meendCb.checked;
-    let noteDuration = (60 / bpm) * 1000;
+    let noteDurationSec = 60 / bpm;
+    let crossfadeOverlapTail = 0.20; // 200ms stabilization trail
 
-    if (useMeend && meendNoteCounter > 12) {
-        if (continuousOsc) {
-            try { continuousOsc.stop(time); } catch(e){}
-            continuousOsc = null; continuousGain = null;
+    // MEEND EQUALIZER HANDLING: Stretches playbackRate exponentially on running nodes
+    if (useMeend && currentActiveNode && currentActiveSwaraName) {
+        let originSampleConfig = SAMPLE_MAP[currentActiveSwaraName];
+        if (originSampleConfig) {
+            let targetPlaybackRate = targetFreq / originSampleConfig.freq;
+            
+            currentActiveNode.playbackRate.setValueAtTime(currentActiveNode.playbackRate.value, time);
+            currentActiveNode.playbackRate.exponentialRampToValueAtTime(targetPlaybackRate, time + 0.12);
+            
+            // Retain original profile map pointers but shift references
+            currentActiveSwaraName = targetSwaraName;
+            return;
         }
-        meendNoteCounter = 0;
     }
 
-    if (!useMeend) {
-        if (continuousOsc) {
-            try { continuousOsc.stop(time); } catch(e){}
-            continuousOsc = null; continuousGain = null;
-        }
-        const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
-        osc.type = 'sine'; 
-        osc.frequency.setValueAtTime(freq, time);
-        gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.25, time + 0.02);
-        gain.gain.setValueAtTime(0.25, time + (noteDuration / 1000) - 0.03);
-        gain.gain.linearRampToValueAtTime(0, time + (noteDuration / 1000));
-        osc.connect(gain); gain.connect(audioCtx.destination);
-        osc.start(time); osc.stop(time + (noteDuration / 1000));
-    } else {
-        meendNoteCounter++;
-        if (!continuousOsc) {
-            continuousOsc = audioCtx.createOscillator(); 
-            continuousGain = audioCtx.createGain();
-            continuousOsc.type = 'sine'; 
-            continuousOsc.frequency.setValueAtTime(freq, time);
-            continuousGain.gain.setValueAtTime(0, time);
-            continuousGain.gain.linearRampToValueAtTime(0.25, time + 0.04);
-            continuousOsc.connect(continuousGain); 
-            continuousGain.connect(audioCtx.destination);
-            continuousOsc.start(time);
-        } else {
-            continuousGain.gain.linearRampToValueAtTime(0.25, time + 0.01);
-            continuousOsc.frequency.setValueAtTime(continuousOsc.frequency.value, time);
-            continuousOsc.frequency.exponentialRampToValueAtTime(freq, time + 0.07);
-        }
+    // Standard Fade transitions handling boundary collisions smoothly
+    fadeOutActiveSample();
+
+    // Load Decoded Audio Buffer arrays safely
+    let loadedBuffer = audioBuffers[targetSwaraName];
+    if (!loadedBuffer) {
+        // Dynamic string matching fallback if specific variant missing
+        let stringFallbackKey = targetSwaraName.replace(/[.']/g, '');
+        loadedBuffer = audioBuffers[stringFallbackKey] || Object.values(audioBuffers)[0];
     }
+
+    // Dynamic Synthesizer oscillator generation fallback configuration if asset fetching fails
+    if (!loadedBuffer) {
+        let sampleOsc = audioCtx.createOscillator();
+        let sampleGain = audioCtx.createGain();
+        sampleOsc.type = 'sine';
+        sampleOsc.frequency.setValueAtTime(targetFreq, time);
+        sampleGain.gain.setValueAtTime(0, time);
+        sampleGain.gain.linearRampToValueAtTime(0.25, time + 0.02);
+        sampleGain.gain.setValueAtTime(0.25, time + noteDurationSec - 0.02);
+        sampleGain.gain.linearRampToValueAtTime(0, time + noteDurationSec);
+        sampleOsc.connect(sampleGain); sampleGain.connect(audioCtx.destination);
+        sampleOsc.start(time); sampleOsc.stop(time + noteDurationSec);
+        return;
+    }
+
+    let bufferSource = audioCtx.createBufferSource();
+    let gainNode = audioCtx.createGain();
+    
+    bufferSource.buffer = loadedBuffer;
+    
+    // Exact pitch shift calculations: Target HZ / Original recorded pitch file anchor profile
+    let sampleReferenceBaseHz = SAMPLE_MAP[targetSwaraName] ? SAMPLE_MAP[targetSwaraName].freq : SA_FREQ;
+    let computedPlaybackRate = targetFreq / sampleReferenceBaseHz;
+    bufferSource.playbackRate.setValueAtTime(computedPlaybackRate, time);
+
+    // Crossfading Envelope Curve Logic
+    gainNode.gain.setValueAtTime(0, time);
+    gainNode.gain.linearRampToValueAtTime(0.40, time + 0.03); // Instant attack curve eliminates clicking
+    gainNode.gain.setValueAtTime(0.40, time + noteDurationSec);
+    gainNode.gain.linearRampToValueAtTime(0.001, time + noteDurationSec + crossfadeOverlapTail);
+
+    bufferSource.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    
+    bufferSource.start(time);
+    bufferSource.stop(time + noteDurationSec + crossfadeOverlapTail);
+
+    currentActiveNode = bufferSource;
+    currentActiveGainNode = gainNode;
+    currentActiveSwaraName = targetSwaraName;
+}
+
+function fadeOutActiveSample() {
+    let time = audioCtx ? audioCtx.currentTime : 0;
+    if (currentActiveGainNode) {
+        let decayingGain = currentActiveGainNode;
+        let decayingNode = currentActiveNode;
+        try {
+            decayingGain.gain.setValueAtTime(decayingGain.gain.value, time);
+            decayingGain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+            setTimeout(() => {
+                try { decayingNode.stop(); decayingNode.disconnect(); decayingGain.disconnect(); } catch(e){}
+            }, 200);
+        } catch(e){}
+    }
+    currentActiveNode = null;
+    currentActiveGainNode = null;
+    currentActiveSwaraName = null;
 }
 
 function renderSwaraToTrack(name, chromaIndex) {
