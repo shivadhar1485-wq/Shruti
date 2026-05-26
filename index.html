@@ -1,116 +1,710 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>Spontaneous Swara Streamer Pro Studio</title>
+<title>Swara Streamer Studio</title>
 
 <style>
+
+:root{
+    --bg:#0f0f11;
+    --panel:#18181c;
+    --panel2:#22222a;
+    --border:#2e2e38;
+    --text:#f1f5f9;
+    --muted:#94a3b8;
+    --blue:#3b82f6;
+    --blue-dark:#2563eb;
+    --danger:#dc2626;
+}
+
+/* =========================
+   RESET
+========================= */
+
 *{
-    box-sizing:border-box;
     margin:0;
     padding:0;
+    box-sizing:border-box;
 }
 
 html,
 body{
     width:100%;
     overflow-x:hidden;
-    min-height:100dvh;
-    -webkit-text-size-adjust:100%;
+    font-family:
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+
+    background:var(--bg);
+    color:var(--text);
 }
 
-body{
-    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
-    background:#0f0f11;
-    color:#e2e8f0;
+/* =========================
+   BODY
+========================= */
 
+body{
+    padding:10px;
     display:flex;
     justify-content:center;
+    align-items:flex-start;
+    min-height:100vh;
+}
+
+/* =========================
+   APP CONTAINER
+========================= */
+
+.container{
+    width:100%;
+    max-width:650px;
+
+    background:var(--panel);
+
+    border:1px solid var(--border);
+
+    border-radius:16px;
+
+    padding:16px;
+
+    box-shadow:
+        0 10px 25px rgba(0,0,0,.45);
+}
+
+/* =========================
+   TITLE
+========================= */
+
+h1{
+    text-align:center;
+
+    font-size:clamp(24px, 5vw, 34px);
+
+    margin-bottom:18px;
+
+    font-weight:700;
+}
+
+/* =========================
+   RAGA SELECT
+========================= */
+
+.raga-wrap{
+    background:#132b63;
+
+    border:1px solid var(--blue);
+
+    border-radius:10px;
+
+    padding:12px;
+
+    margin-bottom:16px;
+}
+
+.raga-wrap label{
+    display:block;
+    font-size:14px;
+    font-weight:600;
+}
+
+/* =========================
+   SAPTAK SECTIONS
+========================= */
+
+.section{
+    background:var(--panel2);
+
+    border:1px solid var(--border);
+
+    border-radius:12px;
+
+    padding:12px;
+
+    margin-bottom:14px;
+}
+
+.section-title{
+    display:block;
+
+    color:var(--blue);
+
+    margin-bottom:10px;
+
+    font-size:12px;
+
+    text-transform:uppercase;
+
+    letter-spacing:.08em;
+
+    font-weight:700;
+}
+
+/* =========================
+   NOTE GRID
+========================= */
+
+.note-grid{
+    display:flex;
+
+    flex-wrap:wrap;
+
+    justify-content:center;
+
+    gap:8px;
+}
+
+.note-grid label{
+    display:flex;
+
+    align-items:center;
+
+    gap:4px;
+
+    background:#111217;
+
+    border:1px solid #2f3138;
+
+    border-radius:8px;
+
+    padding:8px 10px;
+
+    cursor:pointer;
+
+    font-size:14px;
+
+    color:var(--text);
+
+    transition:.15s ease;
+}
+
+.note-grid label:hover{
+    border-color:var(--blue);
+}
+
+.note-grid input{
+    transform:scale(1.1);
+}
+
+/* =========================
+   CONTROLS
+========================= */
+
+.controls{
+    display:grid;
+
+    grid-template-columns:1fr;
+
+    gap:12px;
+
+    background:var(--panel2);
+
+    border:1px solid var(--border);
+
+    border-radius:12px;
+
+    padding:14px;
+
+    margin-bottom:16px;
+}
+
+.control{
+    display:flex;
+
+    flex-direction:column;
+
+    gap:6px;
+}
+
+.control label{
+    font-size:14px;
+    color:var(--muted);
+}
+
+input[type="range"],
+select{
+    width:100%;
+
+    background:#111217;
+
+    color:var(--text);
+
+    border:1px solid #3f3f46;
+
+    border-radius:8px;
 
     padding:10px;
 }
 
-.container{
-    width:min(100%,550px);
+/* =========================
+   CHECKBOX ROW
+========================= */
 
-    background:#18181c;
-    padding:18px;
+.checkbox-row{
+    display:grid;
 
-    border-radius:12px;
+    grid-template-columns:1fr 1fr;
 
-    box-shadow:0 10px 25px rgba(0,0,0,0.65);
-    border:1px solid #2e2e38;
+    gap:10px;
+}
+
+.checkbox-item{
+    background:#111217;
+
+    border:1px solid #2f3138;
+
+    border-radius:10px;
+
+    padding:10px;
+
+    display:flex;
+
+    align-items:center;
+
+    gap:8px;
+
+    font-size:14px;
+}
+
+/* =========================
+   STREAM WINDOW
+========================= */
+
+.stream-box{
+    position:relative;
+
+    height:180px;
+
+    overflow:hidden;
+
+    background:#09090b;
+
+    border:2px solid var(--border);
+
+    border-radius:14px;
+
+    margin-bottom:18px;
+}
+
+.stream-box::before{
+    content:"";
+
+    position:absolute;
+
+    left:50%;
+
+    top:0;
+
+    bottom:0;
+
+    width:2px;
+
+    background:rgba(59,130,246,.45);
+
+    z-index:10;
+}
+
+.stream-track{
+    position:absolute;
+
+    left:50%;
+
+    top:50%;
+
+    transform:translateY(-50%);
+
+    display:flex;
+
+    align-items:center;
+
+    gap:18px;
+}
+
+/* =========================
+   SWARA CARDS
+========================= */
+
+.swara{
+    min-width:52px;
 
     text-align:center;
-}
 
-h2{
-    margin-top:5px;
-    margin-bottom:10px;
+    font-size:22px;
 
-    font-weight:600;
-    color:#f8fafc;
-}
-
-.saptak-section{
-    background:#22222a;
-
-    margin:10px 0;
-    padding:8px;
-
-    border-radius:8px;
-    border:1px solid #2e2e38;
-}
-
-.saptak-label{
-    color:#3b82f6;
-
-    font-size:11px;
     font-weight:700;
 
-    text-transform:uppercase;
+    color:#52525b;
 
-    margin-bottom:5px;
+    transition:.18s ease;
+}
 
-    display:block;
+.swara.active{
+    color:var(--blue);
+
+    font-size:34px;
+
+    text-shadow:0 0 14px rgba(59,130,246,.7);
+}
+
+/* =========================
+   OVERLAY
+========================= */
+
+.overlay{
+    position:absolute;
+
+    inset:0;
+
+    background:rgba(0,0,0,.55);
+
+    display:flex;
+
+    flex-direction:column;
+
+    justify-content:flex-end;
+
+    align-items:center;
+
+    padding-bottom:14px;
+
+    z-index:20;
+
+    opacity:0;
+
+    pointer-events:none;
+
+    transition:.15s ease;
+}
+
+.overlay.show{
+    opacity:1;
+}
+
+.overlay h2{
+    font-size:24px;
+}
+
+.overlay p{
+    font-size:14px;
+    color:#d4d4d8;
+}
+
+/* =========================
+   BUTTONS
+========================= */
+
+.button-row{
+    display:flex;
+
+    flex-direction:column;
+
+    gap:10px;
 }
 
 button{
-    margin:5px;
+    width:100%;
 
-    padding:12px 22px;
+    border:none;
 
-    font-size:15px;
+    border-radius:12px;
+
+    padding:14px;
+
+    font-size:16px;
+
     font-weight:700;
 
     cursor:pointer;
 
-    border-radius:6px;
-    border:none;
-
-    background:#2563eb;
     color:white;
 
-    transition:background 0.15s ease;
+    background:var(--blue-dark);
 
-    touch-action:manipulation;
+    transition:.15s ease;
 }
 
-button:hover:not(:disabled){
-    background:#1d4ed8;
-}
-
-button.danger{
-    background:#dc2626;
+button:hover{
+    opacity:.92;
 }
 
 button:disabled{
-    background:#3f3f46;
-    color:#71717a;
+    opacity:.45;
     cursor:not-allowed;
+}
+
+button.stop{
+    background:var(--danger);
+}
+
+/* =========================
+   TABLET+
+========================= */
+
+@media(min-width:768px){
+
+    body{
+        padding:20px;
+    }
+
+    .container{
+        padding:22px;
+    }
+
+    .controls{
+        grid-template-columns:1fr 1fr;
+    }
+
+    .button-row{
+        flex-direction:row;
+    }
+
+    button{
+        width:100%;
+    }
+
+    .stream-box{
+        height:210px;
+    }
+
+    .stream-track{
+        gap:28px;
+    }
+
+    .swara{
+        min-width:60px;
+    }
+
+}
+
+/* =========================
+   SMALL PHONES
+========================= */
+
+@media(max-width:420px){
+
+    .swara{
+        min-width:40px;
+        font-size:18px;
+    }
+
+    .swara.active{
+        font-size:28px;
+    }
+
+    .stream-track{
+        gap:12px;
+    }
+
+    .checkbox-row{
+        grid-template-columns:1fr;
+    }
+
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>Swara Streamer Studio</h1>
+
+    <!-- RAGA -->
+
+    <div class="raga-wrap">
+        <label>
+
+            Practice Raga
+
+            <select>
+
+                <option>Free Jam</option>
+                <option>Raga Yaman</option>
+                <option>Raga Bhairav</option>
+                <option>Raga Bhoopali</option>
+                <option>Raga Kafi</option>
+                <option>Raga Khamaj</option>
+                <option>Raga Miyan ki Malhar</option>
+                <option>Raga Asavari</option>
+
+            </select>
+
+        </label>
+    </div>
+
+    <!-- MANDRA -->
+
+    <div class="section">
+
+        <span class="section-title">
+            Mandra Saptak
+        </span>
+
+        <div class="note-grid">
+
+            <label><input type="checkbox"> m.</label>
+            <label><input type="checkbox"> M.</label>
+            <label><input type="checkbox"> P.</label>
+            <label><input type="checkbox"> d.</label>
+            <label><input type="checkbox"> D.</label>
+            <label><input type="checkbox"> n.</label>
+            <label><input type="checkbox"> N.</label>
+
+        </div>
+
+    </div>
+
+    <!-- MADHYA -->
+
+    <div class="section">
+
+        <span class="section-title">
+            Madhya Saptak
+        </span>
+
+        <div class="note-grid">
+
+            <label><input type="checkbox" checked> S</label>
+            <label><input type="checkbox"> r</label>
+            <label><input type="checkbox" checked> R</label>
+            <label><input type="checkbox"> g</label>
+            <label><input type="checkbox" checked> G</label>
+            <label><input type="checkbox"> m</label>
+            <label><input type="checkbox"> M</label>
+            <label><input type="checkbox" checked> P</label>
+            <label><input type="checkbox"> d</label>
+            <label><input type="checkbox" checked> D</label>
+            <label><input type="checkbox"> n</label>
+            <label><input type="checkbox"> N</label>
+
+        </div>
+
+    </div>
+
+    <!-- TAAR -->
+
+    <div class="section">
+
+        <span class="section-title">
+            Taar Saptak
+        </span>
+
+        <div class="note-grid">
+
+            <label><input type="checkbox"> S'</label>
+            <label><input type="checkbox"> r'</label>
+            <label><input type="checkbox"> R'</label>
+            <label><input type="checkbox"> g'</label>
+            <label><input type="checkbox"> G'</label>
+            <label><input type="checkbox"> m'</label>
+            <label><input type="checkbox"> M'</label>
+            <label><input type="checkbox"> P'</label>
+
+        </div>
+
+    </div>
+
+    <!-- CONTROLS -->
+
+    <div class="controls">
+
+        <div class="control">
+
+            <label>
+                Tempo (BPM)
+            </label>
+
+            <input type="range" min="40" max="150" value="75">
+
+        </div>
+
+        <div class="control">
+
+            <label>
+                Mode
+            </label>
+
+            <select>
+                <option>Infinite Stream</option>
+                <option>Call & Response</option>
+            </select>
+
+        </div>
+
+        <div class="checkbox-row">
+
+            <div class="checkbox-item">
+                <input type="checkbox" checked>
+                Leap Restrict
+            </div>
+
+            <div class="checkbox-item">
+                <input type="checkbox">
+                Strict No Repeat
+            </div>
+
+            <div class="checkbox-item">
+                <input type="checkbox">
+                Tanpura Drone
+            </div>
+
+            <div class="checkbox-item">
+                <input type="checkbox" checked>
+                Meend
+            </div>
+
+        </div>
+
+    </div>
+
+    <!-- STREAM WINDOW -->
+
+    <div class="stream-box">
+
+        <div class="overlay">
+
+            <h2>LISTEN</h2>
+
+            <p>Prepare to respond</p>
+
+        </div>
+
+        <div class="stream-track">
+
+            <div class="swara">S</div>
+            <div class="swara">R</div>
+            <div class="swara active">G</div>
+            <div class="swara">P</div>
+            <div class="swara">D</div>
+
+        </div>
+
+    </div>
+
+    <!-- BUTTONS -->
+
+    <div class="button-row">
+
+        <button>
+            Start Trainer
+        </button>
+
+        <button class="stop">
+            Stop
+        </button>
+
+    </div>
+
+</div>
+
+</body>
+</html>    cursor:not-allowed;
 }
 
 label{
