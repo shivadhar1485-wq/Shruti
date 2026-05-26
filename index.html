@@ -226,6 +226,12 @@ h1{
     color:var(--muted);
 }
 
+.control-input-row {
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
+
 input[type="range"],
 select{
     width:100%;
@@ -239,6 +245,18 @@ select{
     border-radius:8px;
 
     padding:10px;
+}
+
+/* Miniscule Number Selector Style */
+.miniscule-num {
+    width:70px;
+    background:#111217;
+    color:var(--text);
+    border:1px solid #3f3f46;
+    border-radius:8px;
+    padding:10px 6px;
+    font-size:14px;
+    text-align:center;
 }
 
 /* =========================
@@ -309,6 +327,7 @@ select{
     z-index:10;
 }
 
+/* Dynamic vs Static handling adjustments */
 .stream-track{
     position:absolute;
 
@@ -323,6 +342,15 @@ select{
     align-items:center;
 
     gap:18px;
+}
+
+/* Static fallback view behavior rules applied via js */
+.stream-track.static-grid {
+    left:50% !important;
+    transform:translate(-50%, -50%) !important;
+    width:92%;
+    justify-content:space-evenly;
+    gap:4px !important;
 }
 
 /* =========================
@@ -349,6 +377,15 @@ select{
     font-size:34px;
 
     text-shadow:0 0 14px rgba(59,130,246,.7);
+}
+
+/* Auto scales text when working with 8 or 10 notes in static frame views */
+.stream-track.static-grid .swara {
+    min-width:auto;
+    font-size:clamp(14px, 3.5vw, 22px);
+}
+.stream-track.static-grid .swara.active {
+    font-size:clamp(20px, 5vw, 32px);
 }
 
 /* =========================
@@ -515,8 +552,6 @@ button.stop{
 
     <h1>Swara Streamer Studio</h1>
 
-    <!-- RAGA -->
-
     <div class="raga-wrap">
         <label>
 
@@ -538,8 +573,6 @@ button.stop{
         </label>
     </div>
 
-    <!-- MANDRA -->
-
     <div class="section">
 
         <span class="section-title">
@@ -560,8 +593,6 @@ button.stop{
 
     </div>
 
-    <!-- MADHYA -->
-
     <div class="section">
 
         <span class="section-title">
@@ -581,13 +612,11 @@ button.stop{
             <label><input type="checkbox"> d</label>
             <label><input type="checkbox" checked> D</label>
             <label><input type="checkbox"> n</label>
-            <label><input type="checkbox"> N</label>
+            <label><input type="checkbox" checked> N</label>
 
         </div>
 
     </div>
-
-    <!-- TAAR -->
 
     <div class="section">
 
@@ -610,17 +639,18 @@ button.stop{
 
     </div>
 
-    <!-- CONTROLS -->
-
     <div class="controls">
 
         <div class="control">
 
             <label>
-                Tempo (BPM)
+                Tempo: <span id="bpmValDisplay" style="color:var(--blue); font-weight:700;">75</span> BPM
             </label>
 
-            <input type="range" min="40" max="150" value="75">
+            <div class="control-input-row">
+                <input type="range" min="40" max="150" value="75">
+                <input type="number" min="40" max="150" value="75" class="miniscule-num">
+            </div>
 
         </div>
 
@@ -630,10 +660,19 @@ button.stop{
                 Mode
             </label>
 
-            <select>
-                <option>Infinite Stream</option>
-                <option>Call & Response</option>
-            </select>
+            <div class="control-input-row">
+                <select id="modeSelectField">
+                    <option>Infinite Stream</option>
+                    <option>Call & Response</option>
+                </select>
+                
+                <select id="phraseLengthField" style="display:none; width:90px;">
+                    <option value="4">4 Notes</option>
+                    <option value="6">6 Notes</option>
+                    <option value="8">8 Notes</option>
+                    <option value="10">10 Notes</option>
+                </select>
+            </div>
 
         </div>
 
@@ -663,8 +702,6 @@ button.stop{
 
     </div>
 
-    <!-- STREAM WINDOW -->
-
     <div class="stream-box">
 
         <div class="overlay">
@@ -687,8 +724,6 @@ button.stop{
 
     </div>
 
-    <!-- BUTTONS -->
-
     <div class="button-row">
 
         <button>
@@ -703,5 +738,500 @@ button.stop{
 
 </div>
 
+<script>
+let audioCtx = null, isPlaying = false, timeoutId = null;
+let continuousOsc = null, continuousGain = null, droneNodes = []; 
+let noteHistory = []; 
+let renderedCount = 0, currentPhraseCount = 0, phraseSwaraMemory = []; 
+let meendNoteCounter = 0; 
+
+let bpm = 75;
+const SA_FREQ = 246.94; 
+const RATIOS = { S:1, r:16/15, R:9/8, g:6/5, G:5/4, m:4/3, M:45/32, P:3/2, d:8/5, D:5/3, n:9/5, N:15/8 };
+
+const CHROMATIC_ORDER = [
+    'm.', 'M.', 'P.', 'd.', 'D.', 'n.', 'N.',
+    'S', 'r', 'R', 'g', 'G', 'm', 'M', 'P', 'd', 'D', 'n', 'N',
+    'S\'', 'r\'', 'R\'', 'g\'', 'G\'', 'm\'', 'M\'', 'P\''
+];
+
+const RAGA_DEFINITIONS = {
+    'Raga Yaman':    { allowed: ['S','R','G','M','P','D','N'], vadi:'G', samvadi:'N' },
+    'Raga Bhairav':  { allowed: ['S','r','G','m','P','d','N'], vadi:'d', samvadi:'r' },
+    'Raga Bhoopali': { allowed: ['S','R','G','P','D'],         vadi:'G', samvadi:'D' },
+    'Raga Kafi':     { allowed: ['S','R','g','m','P','D','n'], vadi:'P', samvadi:'S' },
+    'Raga Khamaj':   { allowed: ['S','R','G','m','P','D','N','n'], vadi:'G', samvadi:'N' },
+    'Raga Miyan ki Malhar':   { allowed: ['S','R','g','m','P','D','n','N'], vadi:'S', samvadi:'P' },
+    'Raga Asavari':  { allowed: ['S','R','m','P','d','g','n'], vadi:'d', samvadi:'g' }
+};
+
+// DOM Elements
+const ragaSelect = document.querySelector('.raga-wrap select');
+const noteCheckboxes = document.querySelectorAll('.note-grid input[type="checkbox"]');
+
+const tempoSlider = document.querySelector('.controls input[type="range"]');
+const tempoNumberInput = document.querySelector('.miniscule-num');
+const bpmValDisplay = document.getElementById('bpmValDisplay');
+
+const modeSelect = document.getElementById('modeSelectField');
+const phraseLengthSelect = document.getElementById('phraseLengthField');
+
+const leapRestrictCb = document.querySelectorAll('.checkbox-item input')[0];
+const noRepeatCb = document.querySelectorAll('.checkbox-item input')[1];
+const droneCb = document.querySelectorAll('.checkbox-item input')[2];
+const meendCb = document.querySelectorAll('.checkbox-item input')[3];
+
+const streamTrack = document.querySelector('.stream-track');
+const overlayElement = document.querySelector('.overlay');
+const overlayTitle = document.querySelector('.overlay h2');
+const overlaySub = document.querySelector('.overlay p');
+
+const startBtn = document.querySelectorAll('.button-row button')[0];
+const stopBtn = document.querySelectorAll('.button-row button')[1];
+
+function initApp() {
+    stopBtn.disabled = true;
+
+    ragaSelect.addEventListener('change', applyRagaPreset);
+    
+    // Linked Slider + Numeric Selector inputs
+    tempoSlider.addEventListener('input', (e) => syncTempoInputs(e.target.value, 'slider'));
+    tempoNumberInput.addEventListener('input', (e) => syncTempoInputs(e.target.value, 'number'));
+    
+    modeSelect.addEventListener('change', handleModeChange);
+    phraseLengthSelect.addEventListener('change', handleModeChange);
+    droneCb.addEventListener('change', toggleTanpuraDrone);
+    startBtn.addEventListener('click', startStream);
+    stopBtn.addEventListener('click', stopStream);
+
+    applyRagaPreset();
+    handleModeChange();
+}
+
+function syncTempoInputs(val, source) {
+    let num = parseInt(val);
+    if (isNaN(num)) return;
+    if (num < 40) num = 40;
+    if (num > 150) num = 150;
+    
+    bpm = num;
+    bpmValDisplay.innerText = num;
+
+    if (source === 'slider') tempoNumberInput.value = num;
+    if (source === 'number') tempoSlider.value = num;
+}
+
+function applyRagaPreset() {
+    const ragaKey = ragaSelect.value;
+    if (ragaKey === 'Free Jam') return;
+    const def = RAGA_DEFINITIONS[ragaKey];
+    if (!def) return;
+
+    noteCheckboxes.forEach(cb => {
+        let rawVal = cb.parentElement.textContent.trim();
+        let baseSwara = rawVal.replace(/[.']/g, ''); 
+        cb.checked = def.allowed.includes(baseSwara);
+    });
+}
+
+function handleModeChange() {
+    const isCR = modeSelect.value === 'Call & Response';
+    phraseLengthSelect.style.display = isCR ? 'block' : 'none';
+    
+    overlayElement.classList.remove('show');
+    streamTrack.style.transition = 'none';
+    
+    if(isCR) {
+        streamTrack.classList.add('static-grid');
+        setupPlaceholderGrid();
+    } else {
+        streamTrack.classList.remove('static-grid');
+        streamTrack.style.left = '50%';
+        streamTrack.style.transform = 'translate(-30px, -50%)'; 
+        streamTrack.innerHTML = '<div class="swara active">---</div>';
+    }
+}
+
+function getSelectedPool() {
+    let pool = [];
+    noteCheckboxes.forEach(cb => {
+        if(!cb.checked) return;
+        let val = cb.parentElement.textContent.trim();
+        let base = val.replace(/[.']/g, '');
+        let mult = val.includes('.') ? 0.5 : (val.includes("'") ? 2.0 : 1.0);
+        pool.push({ 
+            name: val, 
+            freq: SA_FREQ * RATIOS[base] * mult,
+            chromaIndex: CHROMATIC_ORDER.indexOf(val)
+        });
+    });
+    return pool;
+}
+
+function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function toggleTanpuraDrone() {
+    if (!isPlaying) return; 
+    initAudio();
+    if (droneCb.checked) {
+        if (droneNodes.length > 0) return;
+        let time = audioCtx.currentTime;
+        let notes = [SA_FREQ * 0.5, SA_FREQ * 1.5, SA_FREQ, SA_FREQ * 2.0]; 
+        notes.forEach((freq, idx) => {
+            let osc = audioCtx.createOscillator();
+            let gain = audioCtx.createGain();
+            osc.type = (idx % 2 === 0) ? 'triangle' : 'sine';
+            osc.frequency.setValueAtTime(freq, time);
+            osc.frequency.linearRampToValueAtTime(freq + (Math.random() * 0.4 - 0.2), time + 2);
+            let vol = (idx === 1) ? 0.015 : 0.025; 
+            gain.gain.setValueAtTime(0, time);
+            gain.gain.linearRampToValueAtTime(vol, time + 1.5);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(time);
+            droneNodes.push({ osc, gain });
+        });
+    } else { killDrone(); }
+}
+
+function killDrone() {
+    droneNodes.forEach(node => { try { node.osc.stop(); } catch(e){} });
+    droneNodes = [];
+}
+
+function startStream() {
+    let pool = getSelectedPool();
+    if (pool.length < 1) return alert("Please select your note configurations first!");
+
+    initAudio();
+    isPlaying = true;
+    startBtn.disabled = true;
+    stopBtn.disabled = false;
+    
+    const mode = modeSelect.value;
+    streamTrack.innerHTML = '';
+    
+    noteHistory = []; renderedCount = 0; currentPhraseCount = 0; phraseSwaraMemory = []; meendNoteCounter = 0;
+
+    if (mode === 'Call & Response') {
+        streamTrack.classList.add('static-grid');
+        setupPlaceholderGrid();
+    } else {
+        streamTrack.classList.remove('static-grid');
+        streamTrack.style.transition = 'transform 0.2s cubic-bezier(0.25, 1, 0.5, 1)';
+        streamTrack.style.left = '50%';
+        streamTrack.style.transform = 'translate(-30px, -50%)'; 
+    }
+
+    toggleTanpuraDrone();
+    tick();
+}
+
+function setupPlaceholderGrid() {
+    streamTrack.innerHTML = '';
+    const maxPhraseLen = parseInt(phraseLengthSelect.value); 
+    for(let i=0; i < maxPhraseLen; i++) {
+        let placeholder = document.createElement('div');
+        placeholder.className = 'swara';
+        placeholder.innerText = '_';
+        streamTrack.appendChild(placeholder);
+    }
+}
+
+function stopStream() {
+    isPlaying = false; 
+    clearTimeout(timeoutId);
+    if (continuousOsc) { 
+        try { continuousOsc.stop(); } catch(e){} 
+        continuousOsc = null; continuousGain = null; 
+    }
+    killDrone();
+    overlayElement.classList.remove('show');
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    handleModeChange(); 
+}
+
+function tick() {
+    if (!isPlaying) return;
+    let pool = getSelectedPool();
+    if (pool.length === 0) { stopStream(); return; }
+
+    const mode = modeSelect.value;
+    const maxPhraseLen = parseInt(phraseLengthSelect.value);
+    let interval = (60 / bpm) * 1000;
+
+    if (mode === 'Infinite Stream') {
+        let nextSwara = selectNextSpontaneousSwara(pool);
+        noteHistory.push(nextSwara.name);
+        if (noteHistory.length > 5) noteHistory.shift();
+        playVoice(nextSwara.freq);
+        renderSwaraToTrack(nextSwara.name, nextSwara.chromaIndex);
+        timeoutId = setTimeout(tick, interval);
+    } else {
+        if (currentPhraseCount < maxPhraseLen) {
+            overlayElement.classList.add('show');
+            overlayTitle.innerText = "LISTEN";
+            overlayTitle.style.color = "#3b82f6";
+            overlaySub.innerText = `Playing note ${currentPhraseCount + 1} of ${maxPhraseLen}`;
+
+            let nextSwara = selectNextSpontaneousSwara(pool);
+            noteHistory.push(nextSwara.name);
+            if (noteHistory.length > 5) noteHistory.shift();
+            phraseSwaraMemory.push(nextSwara);
+
+            playVoice(nextSwara.freq);
+            
+            let targetCard = streamTrack.children[currentPhraseCount];
+            if (targetCard) {
+                targetCard.innerText = "?";
+                targetCard.classList.add('active');
+                targetCard.dataset.secretName = nextSwara.name;
+                
+                // Keep layout structure static: items stay perfectly in line horizontally
+                targetCard.style.transform = 'none';
+
+                if (currentPhraseCount > 0) streamTrack.children[currentPhraseCount - 1].classList.remove('active');
+            }
+            currentPhraseCount++;
+            timeoutId = setTimeout(tick, interval);
+        } else {
+            if (streamTrack.children[maxPhraseLen - 1]) streamTrack.children[maxPhraseLen - 1].classList.remove('active');
+
+            overlayTitle.innerText = "SING / ECHO NOW";
+            overlayTitle.style.color = "#f59e0b";
+            
+            if (continuousGain) continuousGain.gain.setValueAtTime(0, audioCtx.currentTime);
+
+            let echoTimeTotal = interval * maxPhraseLen;
+            let timeSlice = echoTimeTotal / 4;
+            let count = 4;
+            overlaySub.innerText = `⏱️ Echo window closing: ${count}`;
+            let countInterval = setInterval(() => {
+                count--;
+                if (count > 0) overlaySub.innerText = `⏱️ Echo window closing: ${count}`;
+            }, timeSlice);
+
+            setTimeout(() => {
+                clearInterval(countInterval);
+                revealPhraseCards();
+                overlayTitle.innerText = "PHRASE REPLAY";
+                overlayTitle.style.color = "#10b981";
+                overlaySub.innerText = "Internalize and audit the melodic movement...";
+
+                replayPhraseSequence(0, interval, () => {
+                    setTimeout(() => {
+                        overlayElement.classList.remove('show');
+                        setupPlaceholderGrid();
+                        currentPhraseCount = 0; phraseSwaraMemory = [];
+                        tick();
+                    }, 2500); 
+                });
+            }, echoTimeTotal);
+        }
+    }
+}
+
+function replayPhraseSequence(idx, speedInterval, finishCallback) {
+    if (!isPlaying) return;
+    if (idx >= phraseSwaraMemory.length) {
+        if (streamTrack.children[phraseSwaraMemory.length - 1]) streamTrack.children[phraseSwaraMemory.length - 1].classList.remove('active');
+        finishCallback(); return;
+    }
+    let currentCard = streamTrack.children[idx];
+    if (currentCard) {
+        currentCard.classList.add('active');
+        if (idx > 0 && streamTrack.children[idx - 1]) streamTrack.children[idx - 1].classList.remove('active');
+    }
+    playVoice(phraseSwaraMemory[idx].freq);
+    setTimeout(() => { replayPhraseSequence(idx + 1, speedInterval, finishCallback); }, speedInterval);
+}
+
+function selectNextSpontaneousSwara(pool) {
+    if (noteHistory.length === 0 || pool.length === 1) {
+        return pool[Math.floor(Math.random() * pool.length)];
+    }
+
+    let lastNoteName = noteHistory[noteHistory.length - 1];
+    let lastNoteBase = lastNoteName.replace(/[.']/g, '');
+    let filteredPool = pool;
+
+    if (noRepeatCb.checked) {
+        filteredPool = filteredPool.filter(p => p.name !== lastNoteName);
+    } else {
+        if (noteHistory.length >= 2 && noteHistory[noteHistory.length - 1] === lastNoteName && noteHistory[noteHistory.length - 2] === lastNoteName) {
+            filteredPool = filteredPool.filter(p => p.name !== lastNoteName);
+        }
+    }
+
+    if (leapRestrictCb.checked) {
+        let lastSwaraObj = pool.find(p => p.name === lastNoteName);
+        if (lastSwaraObj) {
+            let closeNotes = filteredPool.filter(p => Math.abs(p.chromaIndex - lastSwaraObj.chromaIndex) <= 5);
+            if (closeNotes.length > 0) filteredPool = closeNotes;
+        }
+    }
+
+    const ragaKey = ragaSelect.value;
+    if (ragaKey !== 'Free Jam' && RAGA_DEFINITIONS[ragaKey]) {
+        const raga = RAGA_DEFINITIONS[ragaKey];
+        let weights = new Array(filteredPool.length).fill(10);
+
+        filteredPool.forEach((swara, idx) => {
+            let baseName = swara.name.replace(/[.']/g, '');
+
+            if (baseName === raga.vadi) weights[idx] += 20;
+            if (baseName === raga.samvadi) weights[idx] += 12;
+
+            if (ragaKey === 'Raga Yaman') {
+                if (lastNoteBase === 'N' && baseName === 'R') weights[idx] += 25; 
+                if (lastNoteBase === 'N' && baseName === 'S') weights[idx] -= 9;  
+                if (lastNoteBase === 'M' && baseName === 'G') weights[idx] += 15; 
+                if (lastNoteBase === 'P' && baseName === 'M') weights[idx] += 15; 
+            }
+            else if (ragaKey === 'Raga Bhairav') {
+                if (lastNoteBase === 'P' && baseName === 'm') weights[idx] += 20; 
+                if (lastNoteBase === 'm' && baseName === 'r') weights[idx] += 25; 
+                if (lastNoteBase === 'S' && baseName === 'N') weights[idx] += 15; 
+            }
+            else if (ragaKey === 'Raga Bhoopali') {
+                if (lastNoteBase === 'S' && baseName === 'R') weights[idx] += 15; 
+                if (lastNoteBase === 'R' && baseName === 'G') weights[idx] += 20;
+                if (lastNoteBase === 'P' && baseName === 'G') weights[idx] += 20; 
+            }
+            else if (ragaKey === 'Raga Kafi') {
+                if (lastNoteBase === 'R' && baseName === 'g') weights[idx] += 20; 
+                if (lastNoteBase === 'g' && baseName === 'm') weights[idx] += 20;
+                if (lastNoteBase === 'P' && baseName === 'm') weights[idx] += 15; 
+            }
+            else if (ragaKey === 'Raga Khamaj') {
+                let isAscending = swara.chromaIndex > CHROMATIC_ORDER.indexOf(lastNoteName);
+                if (isAscending && swara.name.toLowerCase().includes('n')) {
+                    if (swara.name.includes("'")) weights[idx] = 1; 
+                }
+                if (lastNoteBase === 'D' && baseName === 'n') weights[idx] += 25; 
+                if (lastNoteBase === 'n' && baseName === 'D') weights[idx] += 20;
+            }
+            else if (ragaKey === 'Raga Miyan ki Malhar') {
+                if (lastNoteBase === 'R' && baseName === 'g') weights[idx] += 30; 
+                if (lastNoteBase === 'g' && baseName === 'm') weights[idx] += 25;
+                if (lastNoteBase === 'P' && baseName === 'n') weights[idx] += 20; 
+            }
+            else if (ragaKey === 'Raga Asavari') {
+                let isAscending = swara.chromaIndex > CHROMATIC_ORDER.indexOf(lastNoteName);
+                if (isAscending && (baseName === 'g' || baseName === 'n')) weights[idx] = 1; 
+                if (lastNoteBase === 'd' && baseName === 'P') weights[idx] += 25; 
+                if (lastNoteBase === 'm' && baseName === 'g') weights[idx] += 20;
+            }
+        });
+
+        let totalWeight = weights.reduce((a, b) => a + b, 0);
+        let roll = Math.random() * totalWeight, sum = 0;
+        for (let i = 0; i < filteredPool.length; i++) {
+            sum += weights[i];
+            if (roll <= sum) return filteredPool[i];
+        }
+    }
+
+    if (filteredPool.length === 0) filteredPool = pool;
+    return filteredPool[Math.floor(Math.random() * filteredPool.length)];
+}
+
+function playVoice(freq) {
+    initAudio();
+    let time = audioCtx.currentTime;
+    let useMeend = meendCb.checked;
+    let noteDuration = (60 / bpm) * 1000;
+
+    if (useMeend && meendNoteCounter > 12) {
+        if (continuousOsc) {
+            try { continuousOsc.stop(time); } catch(e){}
+            continuousOsc = null; continuousGain = null;
+        }
+        meendNoteCounter = 0;
+    }
+
+    if (!useMeend) {
+        if (continuousOsc) {
+            try { continuousOsc.stop(time); } catch(e){}
+            continuousOsc = null; continuousGain = null;
+        }
+        const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+        osc.type = 'sine'; 
+        osc.frequency.setValueAtTime(freq, time);
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.25, time + 0.02);
+        gain.gain.setValueAtTime(0.25, time + (noteDuration / 1000) - 0.03);
+        gain.gain.linearRampToValueAtTime(0, time + (noteDuration / 1000));
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(time); osc.stop(time + (noteDuration / 1000));
+    } else {
+        meendNoteCounter++;
+        if (!continuousOsc) {
+            continuousOsc = audioCtx.createOscillator(); 
+            continuousGain = audioCtx.createGain();
+            continuousOsc.type = 'sine'; 
+            continuousOsc.frequency.setValueAtTime(freq, time);
+            continuousGain.gain.setValueAtTime(0, time);
+            continuousGain.gain.linearRampToValueAtTime(0.25, time + 0.04);
+            continuousOsc.connect(continuousGain); 
+            continuousGain.connect(audioCtx.destination);
+            continuousOsc.start(time);
+        } else {
+            continuousGain.gain.linearRampToValueAtTime(0.25, time + 0.01);
+            continuousOsc.frequency.setValueAtTime(continuousOsc.frequency.value, time);
+            continuousOsc.frequency.exponentialRampToValueAtTime(freq, time + 0.07);
+        }
+    }
+}
+
+function renderSwaraToTrack(name, chromaIndex) {
+    const currentActive = streamTrack.querySelector('.swara.active');
+    if (currentActive) currentActive.classList.remove('active');
+    
+    const newCard = document.createElement('div');
+    newCard.className = 'swara active'; 
+    newCard.innerText = name;
+    
+    let middleChromaIndex = CHROMATIC_ORDER.indexOf('S');
+    let verticalShift = (chromaIndex - middleChromaIndex) * -12; 
+    newCard.style.transform = `translateY(${verticalShift}px)`;
+    
+    streamTrack.appendChild(newCard);
+
+    const stepSize = (window.innerWidth < 420) ? (40 + 12) : ((window.innerWidth >= 768) ? (60 + 28) : (52 + 18)); 
+    let targetX = -(renderedCount * stepSize) - 30;
+    let targetY = -verticalShift; 
+
+    streamTrack.style.transform = `translate(${targetX}px, calc(-50% + ${targetY}px))`;
+    renderedCount++;
+
+    if (streamTrack.children.length > 60) {
+        for (let i = 0; i < 30; i++) { streamTrack.removeChild(streamTrack.firstChild); }
+        renderedCount -= 30;
+        let correctedX = -(renderedCount * stepSize) - 30;
+        streamTrack.style.transition = 'none'; 
+        streamTrack.style.transform = `translate(${correctedX}px, calc(-50% + ${targetY}px))`;
+        streamTrack.offsetHeight; 
+        streamTrack.style.transition = 'transform 0.2s cubic-bezier(0.25, 1, 0.5, 1)';
+    }
+}
+
+function revealPhraseCards() {
+    const cards = streamTrack.querySelectorAll('.swara');
+    cards.forEach(card => {
+        if (card.dataset.secretName) {
+            card.innerText = card.dataset.secretName;
+            card.style.color = "#10b981"; 
+            card.style.fontWeight = "900";
+            delete card.dataset.secretName;
+        }
+    });
+}
+
+window.addEventListener('DOMContentLoaded', initApp);
+</script>
 </body>
 </html>
