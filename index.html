@@ -735,14 +735,14 @@ button.stop{
 </div>
 
 <script>
-// --- CORE INSTANCE STATE ---
 let audioCtx = null, isPlaying = false, timeoutId = null;
 let droneNodes = []; 
 let noteHistory = []; 
 let renderedCount = 0, currentPhraseCount = 0, phraseSwaraMemory = []; 
+let isAssetsLoaded = false;
 
 let bpm = 75;
-const SA_FREQ = 246.94; // B3 Standard Baseline Pitch Anchor Configuration
+const SA_FREQ = 246.94; 
 const RATIOS = { S:1, r:16/15, R:9/8, g:6/5, G:5/4, m:4/3, M:45/32, P:3/2, d:8/5, D:5/3, n:9/5, N:15/8 };
 
 const CHROMATIC_ORDER = [
@@ -761,8 +761,7 @@ const RAGA_DEFINITIONS = {
     'Raga Asavari':  { allowed: ['S','R','m','P','d','g','n'], vadi:'d', samvadi:'g' }
 };
 
-// --- ACOUSTIC FILE SAMPLE ASSIGNMENTS ---
-const SAMPLE_BASE_DIR = "./"; // Dynamic directory target reference matching your folder workspace layout
+const SAMPLE_BASE_DIR = "./"; 
 const SAMPLE_MAP = {
     "m.":  { file: "E3.mp3",  freq: 164.81 },
     "M.":  { file: "F3.mp3",  freq: 174.61 },
@@ -771,7 +770,7 @@ const SAMPLE_MAP = {
     "D.":  { file: "A3.mp3",  freq: 220.00 },
     "n.":  { file: "Bb3.mp3", freq: 233.08 },
     "N.":  { file: "B3.mp3",  freq: 246.94 },
-    "S":   { file: "B3.mp3",  freq: 246.94 }, // S baseline matches B3 anchor configuration 
+    "S":   { file: "B3.mp3",  freq: 246.94 }, 
     "r":   { file: "C4.mp3",  freq: 261.63 },
     "R":   { file: "Db4.mp3", freq: 277.18 },
     "g":   { file: "D4.mp3",  freq: 293.66 },
@@ -826,36 +825,17 @@ function initApp() {
     stopBtn.disabled = true;
 
     ragaSelect.addEventListener('change', applyRagaPreset);
-    
     tempoSlider.addEventListener('input', (e) => syncTempoInputs(e.target.value, 'slider'));
     tempoNumberInput.addEventListener('input', (e) => syncTempoInputs(e.target.value, 'number'));
     
     modeSelect.addEventListener('change', handleModeChange);
     phraseLengthSelect.addEventListener('change', handleModeChange);
     droneCb.addEventListener('change', toggleTanpuraDrone);
-    startBtn.addEventListener('click', startStream);
+    startBtn.addEventListener('click', handleStartClick);
     stopBtn.addEventListener('click', stopStream);
 
     applyRagaPreset();
     handleModeChange();
-    preloadAudioAssets();
-}
-
-async function preloadAudioAssets() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    console.log("Initializing Acoustic Note Profiles Archive Fetch...");
-    
-    for (let key in SAMPLE_MAP) {
-        try {
-            const fileUrl = `${SAMPLE_BASE_DIR}${SAMPLE_MAP[key].file}`;
-            const res = await fetch(fileUrl);
-            const arrayBuf = await res.arrayBuffer();
-            audioBuffers[key] = await audioCtx.decodeAudioData(arrayBuf);
-        } catch (e) {
-            console.warn(`Sample tracking missing or failed to decode array: ${SAMPLE_MAP[key].file}. Falling back dynamically to synth options.`);
-        }
-    }
-    console.log("Asset profiles preloaded successfully.");
 }
 
 function syncTempoInputs(val, source) {
@@ -901,6 +881,33 @@ function handleModeChange() {
         streamTrack.style.transform = 'translate(-30px, -50%)'; 
         streamTrack.innerHTML = '<div class="swara active">---</div>';
     }
+}
+
+async function handleStartClick() {
+    initAudio(); // Force audio context activation safely inside user click thread
+    
+    if (!isAssetsLoaded) {
+        startBtn.disabled = true;
+        overlayElement.classList.add('show');
+        overlayTitle.innerText = "LOADING SWARAS";
+        overlayTitle.style.color = "#3b82f6";
+        overlaySub.innerText = "Fetching acoustic audio samples... Please wait.";
+
+        for (let key in SAMPLE_MAP) {
+            try {
+                const fileUrl = `${SAMPLE_BASE_DIR}${SAMPLE_MAP[key].file}`;
+                const res = await fetch(fileUrl);
+                const arrayBuf = await res.arrayBuffer();
+                audioBuffers[key] = await audioCtx.decodeAudioData(arrayBuf);
+            } catch (e) {
+                console.warn(`Could not load ${SAMPLE_MAP[key].file}. Fallback oscillator setup activated.`);
+            }
+        }
+        isAssetsLoaded = true;
+        overlayElement.classList.remove('show');
+    }
+    
+    startStream();
 }
 
 function getSelectedPool() {
@@ -956,7 +963,6 @@ function startStream() {
     let pool = getSelectedPool();
     if (pool.length < 1) return alert("Please select your note configurations first!");
 
-    initAudio();
     isPlaying = true;
     startBtn.disabled = true;
     stopBtn.disabled = false;
@@ -1185,15 +1191,13 @@ function selectNextSpontaneousSwara(pool) {
     return filteredPool[Math.floor(Math.random() * filteredPool.length)];
 }
 
-// --- EQUALIZED CROSSFADING COMPILER SAMPLES CONTROLLER ---
 function playVoiceSample(targetSwaraName, targetFreq) {
     initAudio();
     let time = audioCtx.currentTime;
     let useMeend = meendCb.checked;
     let noteDurationSec = 60 / bpm;
-    let crossfadeOverlapTail = 0.20; // 200ms stabilization trail
+    let crossfadeOverlapTail = 0.20; 
 
-    // MEEND EQUALIZER HANDLING: Stretches playbackRate exponentially on running nodes
     if (useMeend && currentActiveNode && currentActiveSwaraName) {
         let originSampleConfig = SAMPLE_MAP[currentActiveSwaraName];
         if (originSampleConfig) {
@@ -1202,25 +1206,21 @@ function playVoiceSample(targetSwaraName, targetFreq) {
             currentActiveNode.playbackRate.setValueAtTime(currentActiveNode.playbackRate.value, time);
             currentActiveNode.playbackRate.exponentialRampToValueAtTime(targetPlaybackRate, time + 0.12);
             
-            // Retain original profile map pointers but shift references
             currentActiveSwaraName = targetSwaraName;
             return;
         }
     }
 
-    // Standard Fade transitions handling boundary collisions smoothly
     fadeOutActiveSample();
 
-    // Load Decoded Audio Buffer arrays safely
     let loadedBuffer = audioBuffers[targetSwaraName];
     if (!loadedBuffer) {
-        // Dynamic string matching fallback if specific variant missing
         let stringFallbackKey = targetSwaraName.replace(/[.']/g, '');
         loadedBuffer = audioBuffers[stringFallbackKey] || Object.values(audioBuffers)[0];
     }
 
-    // Dynamic Synthesizer oscillator generation fallback configuration if asset fetching fails
     if (!loadedBuffer) {
+        // Safe synth engine fallback parameter adjustments if any individual asset fails network lookup
         let sampleOsc = audioCtx.createOscillator();
         let sampleGain = audioCtx.createGain();
         sampleOsc.type = 'sine';
@@ -1239,14 +1239,12 @@ function playVoiceSample(targetSwaraName, targetFreq) {
     
     bufferSource.buffer = loadedBuffer;
     
-    // Exact pitch shift calculations: Target HZ / Original recorded pitch file anchor profile
     let sampleReferenceBaseHz = SAMPLE_MAP[targetSwaraName] ? SAMPLE_MAP[targetSwaraName].freq : SA_FREQ;
     let computedPlaybackRate = targetFreq / sampleReferenceBaseHz;
     bufferSource.playbackRate.setValueAtTime(computedPlaybackRate, time);
 
-    // Crossfading Envelope Curve Logic
     gainNode.gain.setValueAtTime(0, time);
-    gainNode.gain.linearRampToValueAtTime(0.40, time + 0.03); // Instant attack curve eliminates clicking
+    gainNode.gain.linearRampToValueAtTime(0.40, time + 0.03); 
     gainNode.gain.setValueAtTime(0.40, time + noteDurationSec);
     gainNode.gain.linearRampToValueAtTime(0.001, time + noteDurationSec + crossfadeOverlapTail);
 
