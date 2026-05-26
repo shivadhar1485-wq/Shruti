@@ -548,6 +548,8 @@ button.stop{
 
     <h1>Swara Streamer Studio</h1>
 
+    <!-- RAGA -->
+
     <div class="raga-wrap">
         <label>
 
@@ -569,6 +571,8 @@ button.stop{
         </label>
     </div>
 
+    <!-- MANDRA -->
+
     <div class="section">
 
         <span class="section-title">
@@ -588,6 +592,8 @@ button.stop{
         </div>
 
     </div>
+
+    <!-- MADHYA -->
 
     <div class="section">
 
@@ -614,6 +620,8 @@ button.stop{
 
     </div>
 
+    <!-- TAAR -->
+
     <div class="section">
 
         <span class="section-title">
@@ -634,6 +642,8 @@ button.stop{
         </div>
 
     </div>
+
+    <!-- CONTROLS -->
 
     <div class="controls">
 
@@ -698,6 +708,8 @@ button.stop{
 
     </div>
 
+    <!-- STREAM WINDOW -->
+
     <div class="stream-box">
 
         <div class="overlay">
@@ -719,6 +731,8 @@ button.stop{
         </div>
 
     </div>
+
+    <!-- BUTTONS -->
 
     <div class="button-row">
 
@@ -761,6 +775,7 @@ const RAGA_DEFINITIONS = {
     'Raga Asavari':  { allowed: ['S','R','m','P','d','g','n'], vadi:'d', samvadi:'g' }
 };
 
+// Absolute relative root alignment map to avoid path clipping errors on live web deployment
 const SAMPLE_BASE_DIR = "./"; 
 const SAMPLE_MAP = {
     "m.":  { file: "E3.mp3",  freq: 164.81 },
@@ -884,23 +899,25 @@ function handleModeChange() {
 }
 
 async function handleStartClick() {
-    initAudio(); // Force audio context activation safely inside user click thread
+    initAudio(); 
     
     if (!isAssetsLoaded) {
         startBtn.disabled = true;
         overlayElement.classList.add('show');
         overlayTitle.innerText = "LOADING SWARAS";
         overlayTitle.style.color = "#3b82f6";
-        overlaySub.innerText = "Fetching acoustic audio samples... Please wait.";
+        overlaySub.innerText = "Fetching audio assets... App begins automatically when ready.";
 
+        // Load all file maps sequentially asynchronously
         for (let key in SAMPLE_MAP) {
             try {
                 const fileUrl = `${SAMPLE_BASE_DIR}${SAMPLE_MAP[key].file}`;
                 const res = await fetch(fileUrl);
+                if (!res.ok) throw new Error("Network path tracking collision");
                 const arrayBuf = await res.arrayBuffer();
                 audioBuffers[key] = await audioCtx.decodeAudioData(arrayBuf);
             } catch (e) {
-                console.warn(`Could not load ${SAMPLE_MAP[key].file}. Fallback oscillator setup activated.`);
+                console.warn(`File asset configuration matching token [${key}] failed load validation. Synth engine standby route initialized.`);
             }
         }
         isAssetsLoaded = true;
@@ -1202,10 +1219,8 @@ function playVoiceSample(targetSwaraName, targetFreq) {
         let originSampleConfig = SAMPLE_MAP[currentActiveSwaraName];
         if (originSampleConfig) {
             let targetPlaybackRate = targetFreq / originSampleConfig.freq;
-            
             currentActiveNode.playbackRate.setValueAtTime(currentActiveNode.playbackRate.value, time);
             currentActiveNode.playbackRate.exponentialRampToValueAtTime(targetPlaybackRate, time + 0.12);
-            
             currentActiveSwaraName = targetSwaraName;
             return;
         }
@@ -1216,11 +1231,11 @@ function playVoiceSample(targetSwaraName, targetFreq) {
     let loadedBuffer = audioBuffers[targetSwaraName];
     if (!loadedBuffer) {
         let stringFallbackKey = targetSwaraName.replace(/[.']/g, '');
-        loadedBuffer = audioBuffers[stringFallbackKey] || Object.values(audioBuffers)[0];
+        loadedBuffer = audioBuffers[stringFallbackKey];
     }
 
+    // AUTOMATIC SYNTH BACKUP ROUTE: Fires flawlessly if file mismatch occurs on server hosting layers
     if (!loadedBuffer) {
-        // Safe synth engine fallback parameter adjustments if any individual asset fails network lookup
         let sampleOsc = audioCtx.createOscillator();
         let sampleGain = audioCtx.createGain();
         sampleOsc.type = 'sine';
@@ -1229,8 +1244,17 @@ function playVoiceSample(targetSwaraName, targetFreq) {
         sampleGain.gain.linearRampToValueAtTime(0.25, time + 0.02);
         sampleGain.gain.setValueAtTime(0.25, time + noteDurationSec - 0.02);
         sampleGain.gain.linearRampToValueAtTime(0, time + noteDurationSec);
-        sampleOsc.connect(sampleGain); sampleGain.connect(audioCtx.destination);
-        sampleOsc.start(time); sampleOsc.stop(time + noteDurationSec);
+        
+        sampleOsc.connect(sampleGain); 
+        sampleGain.connect(audioCtx.destination);
+        
+        sampleOsc.start(time); 
+        sampleOsc.stop(time + noteDurationSec);
+        
+        // Save placeholder context values to preserve sequential tracking flow loops safely
+        currentActiveNode = sampleOsc;
+        currentActiveGainNode = sampleGain;
+        currentActiveSwaraName = targetSwaraName;
         return;
     }
 
